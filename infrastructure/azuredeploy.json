@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "170491801823752478"
+      "templateHash": "9089770182506193267"
     }
   },
   "parameters": {
@@ -91,6 +91,27 @@
       "defaultValue": "10.0.3.0/24",
       "metadata": {
         "description": "Subnet for Application Gateway."
+      }
+    },
+    "funcPlanSku": {
+      "type": "string",
+      "defaultValue": "B1",
+      "metadata": {
+        "description": "App Service Plan SKU for the Function App (B1, B2, B3, S1, P1v3, etc.)."
+      }
+    },
+    "funcPlanTier": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "metadata": {
+        "description": "App Service Plan tier for the Function App."
+      }
+    },
+    "logicPlanSku": {
+      "type": "string",
+      "defaultValue": "WS1",
+      "metadata": {
+        "description": "App Service Plan SKU for the Logic App (WS1, WS2, WS3)."
       }
     },
     "functionHostKey": {
@@ -363,8 +384,8 @@
       "location": "[parameters('location')]",
       "kind": "linux",
       "sku": {
-        "name": "B1",
-        "tier": "Basic"
+        "name": "[parameters('funcPlanSku')]",
+        "tier": "[parameters('funcPlanTier')]"
       },
       "properties": {
         "reserved": true
@@ -451,7 +472,7 @@
       "name": "[variables('logicPlanName')]",
       "location": "[parameters('location')]",
       "sku": {
-        "name": "WS1",
+        "name": "[parameters('logicPlanSku')]",
         "tier": "WorkflowStandard"
       },
       "kind": "elastic",

@@ -56,6 +56,15 @@ param privateEndpointSubnetPrefix string = '10.0.2.0/24'
 @description('Subnet for Application Gateway.')
 param appGwSubnetPrefix string = '10.0.3.0/24'
 
+@description('App Service Plan SKU for the Function App (B1, B2, B3, S1, P1v3, etc.).')
+param funcPlanSku string = 'B1'
+
+@description('App Service Plan tier for the Function App.')
+param funcPlanTier string = 'Basic'
+
+@description('App Service Plan SKU for the Logic App (WS1, WS2, WS3).')
+param logicPlanSku string = 'WS1'
+
 @secure()
 @description('Function App host key – injected by AG as x-functions-key header.')
 param functionHostKey string = ''
@@ -258,7 +267,7 @@ resource funcPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: funcPlanName
   location: location
   kind: 'linux'
-  sku: { name: 'B1', tier: 'Basic' }
+  sku: { name: funcPlanSku, tier: funcPlanTier }
   properties: { reserved: true }
 }
 
@@ -297,7 +306,7 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
 resource logicPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: logicPlanName
   location: location
-  sku: { name: 'WS1', tier: 'WorkflowStandard' }
+  sku: { name: logicPlanSku, tier: 'WorkflowStandard' }
   kind: 'elastic'
   properties: {}
 }
