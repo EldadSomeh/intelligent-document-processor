@@ -6,7 +6,6 @@
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEldadSomeh%2Fintelligent-document-processor%2Fmain%2Finfrastructure%2Fazuredeploy.json)
 
-![Architecture](docs/images/architecture.svg)
 
 </div>
 
