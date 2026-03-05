@@ -35,7 +35,7 @@ param imageName string = 'preocr-func'
 @description('Docker image tag.')
 param imageTag string = 'latest'
 
-@description('GitHub repo URL for ACR build (includes Dockerfile).')
+@description('GitHub repo URL for ACR build. For private repos, use a PAT: https://<TOKEN>@github.com/owner/repo.git#branch:folder')
 param sourceRepoUrl string = 'https://github.com/EldadSomeh/intelligent-document-processor.git#main:function-app'
 
 @description('Optional: existing VNet resource ID. Leave empty to create a new VNet.')
@@ -53,11 +53,11 @@ param privateEndpointSubnetPrefix string = '10.0.2.0/24'
 @description('Subnet for Application Gateway.')
 param appGwSubnetPrefix string = '10.0.3.0/24'
 
-@description('App Service Plan SKU for the Function App (B1, B2, B3, S1, P1v3, etc.).')
-param funcPlanSku string = 'B1'
+@description('App Service Plan SKU for the Function App. Use P1v3 (default) for best availability, or B1 for lower cost.')
+param funcPlanSku string = 'P1v3'
 
-@description('App Service Plan tier for the Function App.')
-param funcPlanTier string = 'Basic'
+@description('App Service Plan tier for the Function App (PremiumV3, Basic, Standard).')
+param funcPlanTier string = 'PremiumV3'
 
 @secure()
 @description('Function App host key – injected by AG as x-functions-key header.')

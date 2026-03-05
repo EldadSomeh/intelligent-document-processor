@@ -161,7 +161,7 @@ File uploaded to "raw" container
 
 | Service | SKU | Purpose |
 |---------|-----|---------|
-| Azure Functions | B1 (Linux, Docker) | Runs the entire pipeline (preprocessing, OCR, summarization, orchestration, UI) |
+| Azure Functions | P1v3 (Linux, Docker) | Runs the entire pipeline (preprocessing, OCR, summarization, orchestration, UI) |
 | Azure Container Registry | Basic | Stores Docker images |
 | Application Gateway | Standard_v2 | Public entry point + TLS |
 | Azure Document Intelligence | S0 | OCR extraction |
@@ -192,7 +192,10 @@ Or click the **Deploy to Azure** button at the top of this page.
 
 > The deployment takes ~15 minutes. It creates all Azure resources, builds the Docker image in ACR, and configures the Function App to pull from it automatically.
 
-> **Tip:** If you get a "No available instances" error, try a different region (e.g., `westeurope`, `eastus`).
+> **Important:** If you get a **"No available instances"** error, this is an Azure regional capacity issue. Try:
+> 1. Deploy to a **different region** (e.g., `westeurope`, `eastus`, `northeurope`)
+> 2. Use a **lower-cost SKU** by adding: `--parameters funcPlanSku=B1 funcPlanTier=Basic`
+> 3. Create a **new resource group** (capacity is allocated per stamp)
 
 ### 2. Configure App Settings
 

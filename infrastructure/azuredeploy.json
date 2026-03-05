@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "14029268908905310605"
+      "templateHash": "13728796383794678999"
     }
   },
   "parameters": {
@@ -55,7 +55,7 @@
       "type": "string",
       "defaultValue": "https://github.com/EldadSomeh/intelligent-document-processor.git#main:function-app",
       "metadata": {
-        "description": "GitHub repo URL for ACR build (includes Dockerfile)."
+        "description": "GitHub repo URL for ACR build. For private repos, use a PAT: https://<TOKEN>@github.com/owner/repo.git#branch:folder"
       }
     },
     "existingVnetId": {
@@ -95,16 +95,16 @@
     },
     "funcPlanSku": {
       "type": "string",
-      "defaultValue": "B1",
+      "defaultValue": "P1v3",
       "metadata": {
-        "description": "App Service Plan SKU for the Function App (B1, B2, B3, S1, P1v3, etc.)."
+        "description": "App Service Plan SKU for the Function App. Use P1v3 (default) for best availability, or B1 for lower cost."
       }
     },
     "funcPlanTier": {
       "type": "string",
-      "defaultValue": "Basic",
+      "defaultValue": "PremiumV3",
       "metadata": {
-        "description": "App Service Plan tier for the Function App."
+        "description": "App Service Plan tier for the Function App (PremiumV3, Basic, Standard)."
       }
     },
     "functionHostKey": {
