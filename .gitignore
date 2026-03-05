@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# Azure Functions
+local.settings.json
+.python_packages/
+.funcignore
+.azure/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# TLS certificates & keys
+certs/
+*.key
+*.pfx
+*.pem
+*.csr
+
+# Logs & temp files
+func_logs/
+func_logs.zip
+*.log
+*.tmp
+
+# Debug/data files (keep infrastructure templates and config)
+*.json
+!host.json
+!local.settings.json.example
+!azuredeploy.json
+!components.json
+!connections.json
+!package.json
+!tsconfig.json
+
+# Node
+node_modules/
+
+# Docker
+.dockerignore

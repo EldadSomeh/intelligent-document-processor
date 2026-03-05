@@ -1,0 +1,10 @@
+azure-functions>=1.17.0
+azure-functions-durable>=1.2.9
+azure-identity>=1.15.0
+azure-storage-blob>=12.19.0
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
+pdf2image>=1.17.0
+Pillow>=10.2.0
+openai>=1.14.0
+requests>=2.31.0

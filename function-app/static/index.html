@@ -1,0 +1,2543 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pre-OCR Pipeline Dashboard</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface2: #334155;
+            --border: #475569;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --green: #22c55e;
+            --yellow: #eab308;
+            --red: #ef4444;
+            --orange: #f97316;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* ── Header ────────────────────────────── */
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .header h1 .icon { font-size: 1.5rem; }
+        .header .refresh-btn {
+            background: var(--accent);
+            border: none;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+        .header .refresh-btn:hover { background: var(--accent-hover); }
+
+        /* ── Layout ────────────────────────────── */
+        .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+        /* ── Stats Bar ─────────────────────────── */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+        }
+        .stat-card .label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-card .value { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
+        .stat-card .value.green { color: var(--green); }
+        .stat-card .value.red { color: var(--red); }
+        .stat-card .value.yellow { color: var(--yellow); }
+        .stat-card .value.blue { color: var(--accent); }
+
+        /* ── Data-source markers ──────────────── */
+        .marker-table {
+            display: block !important;
+            background: #1e3a8f !important;
+            border: 2px solid #60a5fa !important;
+            border-left: 6px solid #3b82f6 !important;
+            padding: 12px 18px !important;
+            margin: 16px 0 8px !important;
+            border-radius: 10px !important;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5), 0 0 40px rgba(59, 130, 246, 0.2) !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+        }
+        .marker-vision {
+            display: block !important;
+            background: #4c1d95 !important;
+            border: 2px solid #a78bfa !important;
+            border-left: 6px solid #8b5cf6 !important;
+            padding: 12px 18px !important;
+            margin: 16px 0 8px !important;
+            border-radius: 10px !important;
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.5), 0 0 40px rgba(139, 92, 246, 0.2) !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+        }
+        .marker-badge {
+            display: inline-block !important;
+            color: #fff !important;
+            padding: 4px 12px !important;
+            border-radius: 6px !important;
+            font-size: 12px !important;
+            font-weight: 900 !important;
+            letter-spacing: 2px !important;
+            margin-left: 12px !important;
+            text-transform: uppercase !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+        }
+        .marker-badge-table { background: #2563eb !important; box-shadow: 0 0 8px rgba(37,99,235,0.6) !important; }
+        .marker-badge-vision { background: #7c3aed !important; box-shadow: 0 0 8px rgba(124,58,237,0.6) !important; }
+
+        /* ── Table ─────────────────────────────── */
+        .table-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        thead { background: var(--surface2); }
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            font-weight: 600;
+        }
+        td {
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.875rem;
+        }
+        tbody tr { cursor: pointer; transition: background 0.15s; }
+        tbody tr:hover { background: var(--surface2); }
+
+        /* ── Badges ────────────────────────────── */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .badge.success { background: rgba(34,197,94,.15); color: var(--green); }
+        .badge.fail { background: rgba(239,68,68,.15); color: var(--red); }
+        .badge.retry { background: rgba(249,115,22,.15); color: var(--orange); }
+        .badge.pending { background: rgba(148,163,184,.15); color: var(--text-dim); }
+
+        /* ── Score Bar ─────────────────────────── */
+        .score-bar {
+            width: 80px;
+            height: 6px;
+            background: var(--surface2);
+            border-radius: 3px;
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+        .score-bar .fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        /* ── Detail Modal ──────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.7);
+            z-index: 100;
+            overflow-y: auto;
+            padding: 2rem;
+        }
+        .modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 1600px;
+            margin-top: 2rem;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .modal-header h2 { font-size: 1.1rem; }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .modal-close:hover { color: var(--text); }
+        .modal-body { padding: 1.5rem; }
+
+        /* ── Detail Layout ─────────────────────── */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 3fr 2fr;
+            gap: 1.5rem;
+        }
+        @media (max-width: 768px) {
+            .detail-grid { grid-template-columns: 1fr; }
+        }
+        .detail-section {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+        }
+        .detail-section h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            margin-bottom: 1rem;
+        }
+
+        /* ── Metrics Grid ──────────────────────── */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+        .metric-item {
+            background: var(--surface);
+            border-radius: 6px;
+            padding: 0.75rem;
+        }
+        .metric-item .metric-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; }
+        .metric-item .metric-value { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; }
+
+        /* ── Image Preview ─────────────────────── */
+        .image-preview {
+            text-align: center;
+        }
+        .image-preview img {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        /* ── Before / After Comparison ──────────── */
+        .compare-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        @media (max-width: 900px) {
+            .compare-container { grid-template-columns: 1fr; }
+        }
+        .compare-pane {
+            text-align: center;
+        }
+        .compare-pane .compare-label {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.75rem;
+        }
+        .compare-pane.before .compare-label {
+            background: rgba(239,68,68,.15);
+            color: var(--red);
+        }
+        .compare-pane.after .compare-label {
+            background: rgba(34,197,94,.15);
+            color: var(--green);
+        }
+        .compare-pane img {
+            max-width: 100%;
+            max-height: 680px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            transition: transform 0.2s;
+            cursor: zoom-in;
+        }
+
+        /* ── Enhancement Details ──────────────── */
+        .enhance-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .enhance-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem;
+        }
+        .enhance-card-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.4rem;
+        }
+        .enhance-dim {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .enhance-dim-sub {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+        .enhance-steps {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.5rem;
+        }
+        .enhance-step {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .enhance-step.applied {
+            background: rgba(34,197,94,.15);
+            color: var(--green);
+        }
+        .enhance-step.skipped {
+            background: rgba(156,163,175,.12);
+            color: var(--text-dim);
+        }
+        .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.4rem;
+            margin-top: 0.5rem;
+        }
+        .diag-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        .diag-item .diag-label { color: var(--text-dim); }
+        .diag-item .diag-val { font-weight: 600; }
+        .compare-pane img:hover {
+            transform: scale(1.02);
+        }
+        .compare-pane .img-placeholder {
+            padding: 3rem 1rem;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+        .compare-pane .img-loading {
+            padding: 3rem 1rem;
+            color: var(--text-dim);
+        }
+
+        /* ── OCR Text ──────────────────────────── */
+        .ocr-text {
+            background: var(--surface);
+            border-radius: 6px;
+            padding: 1rem;
+            max-height: 500px;
+            overflow-y: auto;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            direction: auto;
+        }
+        .summary-wrap {
+            position: relative;
+        }
+        .summary-wrap .ocr-text {
+            max-height: 200px;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .summary-wrap.expanded .ocr-text {
+            max-height: none;
+            overflow-y: auto;
+        }
+        .summary-wrap:not(.expanded) .ocr-text::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: linear-gradient(transparent, var(--bg));
+            pointer-events: none;
+        }
+        .summary-toggle {
+            display: block;
+            width: 100%;
+            margin-top: 0.5rem;
+            padding: 0.4rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--accent);
+            font-size: 0.75rem;
+            cursor: pointer;
+            text-align: center;
+        }
+        .summary-toggle:hover {
+            background: rgba(59,130,246,.1);
+        }
+
+        /* ── Confidence Words ──────────────────── */
+        .word-high { }
+        .word-mid { color: var(--yellow); text-decoration: underline wavy var(--yellow); }
+        .word-low { color: var(--red); background: rgba(239,68,68,.1); padding: 0 2px; border-radius: 2px; }
+
+        /* ── Loading ───────────────────────────── */
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-dim);
+        }
+        .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid var(--surface2);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Config Bar ────────────────────────── */
+        .config-bar {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .config-bar label { font-size: 0.8rem; color: var(--text-dim); }
+        .config-bar input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            flex: 1;
+            min-width: 250px;
+        }
+        .config-bar input:focus { outline: none; border-color: var(--accent); }
+        .config-bar button {
+            background: var(--green);
+            border: none;
+            color: white;
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        /* ── Page Tabs ─────────────────────────── */
+        .page-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .page-tab {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+        .page-tab.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-dim);
+        }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; }
+
+        /* ── Region Detection ──────────────────── */
+        .region-list {
+            list-style: none;
+            padding: 0;
+        }
+        .region-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--surface);
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+        }
+        .region-icon {
+            font-size: 1.25rem;
+            width: 2rem;
+            text-align: center;
+        }
+        .region-info { flex: 1; }
+        .region-type {
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+        .region-coords {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+        .region-conf {
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .region-summary {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.75rem;
+        }
+        .region-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.85rem;
+        }
+        .region-stat .count {
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        /* ── Upload Zone ───────────────────────── */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 1.5rem;
+            background: var(--surface);
+        }
+        .upload-zone:hover,
+        .upload-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(59,130,246,.08);
+        }
+        .upload-zone .upload-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .upload-zone .upload-text {
+            font-size: 0.95rem;
+            color: var(--text-dim);
+        }
+        .upload-zone .upload-text strong {
+            color: var(--accent);
+        }
+        .upload-zone .upload-hint {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 0.5rem;
+        }
+        .upload-zone input[type="file"] {
+            display: none;
+        }
+        .upload-progress {
+            margin-top: 1rem;
+            display: none;
+        }
+        .upload-progress.active {
+            display: block;
+        }
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background: var(--surface2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+        .upload-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+        .upload-status.success { color: var(--green); }
+        .upload-status.error { color: var(--red); }
+
+        /* ── Pipeline Tracker ───────────────────── */
+        .pipeline-tracker {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+            animation: slideDown 0.3s ease;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; max-height: 0; transform: translateY(-10px); }
+            to { opacity: 1; max-height: 600px; transform: translateY(0); }
+        }
+        .tracker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(59,130,246,0.06);
+        }
+        .tracker-header h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .tracker-header .tracker-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .tracker-header .tracker-actions button {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .tracker-header .tracker-actions button:hover {
+            background: var(--surface2);
+            color: var(--text);
+        }
+        .tracker-body {
+            padding: 0;
+        }
+        .tracker-item {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid rgba(71,85,105,0.3);
+        }
+        .tracker-item:last-child {
+            border-bottom: none;
+        }
+        .tracker-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .tracker-item-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .tracker-item-name .file-icon {
+            font-size: 1rem;
+        }
+        .tracker-item-time {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            font-variant-numeric: tabular-nums;
+        }
+        .tracker-steps {
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+        .tracker-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            position: relative;
+        }
+        .tracker-step .step-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            background: var(--surface2);
+            color: var(--text-dim);
+            border: 2px solid var(--border);
+            transition: all 0.4s;
+            z-index: 2;
+            position: relative;
+        }
+        .tracker-step.active .step-dot {
+            background: rgba(59,130,246,0.2);
+            border-color: var(--accent);
+            color: var(--accent);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
+        }
+        .tracker-step.done .step-dot {
+            background: var(--green);
+            border-color: var(--green);
+            color: #fff;
+        }
+        .tracker-step.error .step-dot {
+            background: var(--red);
+            border-color: var(--red);
+            color: #fff;
+        }
+        .tracker-step .step-label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 6px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .tracker-step.done .step-label { color: var(--green); }
+        .tracker-step.active .step-label { color: var(--accent); font-weight: 600; }
+        .tracker-step.error .step-label { color: var(--red); }
+        .tracker-step .step-connector {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            width: 100%;
+            height: 2px;
+            background: var(--border);
+            z-index: 1;
+        }
+        .tracker-step:last-child .step-connector { display: none; }
+        .tracker-step.done .step-connector { background: var(--green); }
+        .tracker-step.active .step-connector { background: linear-gradient(90deg, var(--accent) 40%, var(--border) 60%); }
+        .tracker-item-detail {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 0.5rem;
+            text-align: center;
+        }
+        .tracker-item.completed {
+            opacity: 0.7;
+        }
+        .tracker-item.completed .tracker-item-detail {
+            color: var(--green);
+        }
+
+        /* ── Toast Notifications ────────────────── */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-width: 420px;
+        }
+        .toast {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,.4);
+        }
+        .toast.toast-error { border-color: var(--red); }
+        .toast.toast-success { border-color: var(--green); }
+        .toast .toast-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .toast .toast-body { flex: 1; }
+        .toast .toast-title { font-weight: 600; margin-bottom: 0.2rem; }
+        .toast .toast-msg { color: var(--text-dim); font-size: 0.8rem; word-break: break-word; }
+        .toast .toast-close {
+            background: none; border: none; color: var(--text-dim);
+            cursor: pointer; font-size: 1rem; padding: 0; flex-shrink: 0;
+        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* ── Error Banner in Detail ─────────────── */
+        .error-banner {
+            background: rgba(239,68,68,.1);
+            border: 1px solid var(--red);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        /* ── Warning Banner ─────────────── */
+        .warning-banner {
+            background: rgba(234,179,8,.08);
+            border: 1px solid var(--yellow);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .warning-banner .warning-title {
+            color: var(--yellow);
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .warning-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            padding: 0.5rem 0.6rem;
+            border-radius: 6px;
+            margin-bottom: 0.4rem;
+            font-size: 0.82rem;
+        }
+        .warning-item.severity-high {
+            background: rgba(239,68,68,.08);
+            border-left: 3px solid var(--red);
+        }
+        .warning-item.severity-medium {
+            background: rgba(234,179,8,.08);
+            border-left: 3px solid var(--yellow);
+        }
+        .warning-item .wi-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+        .warning-item .wi-title { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+        .warning-item .wi-msg { color: var(--text-dim); line-height: 1.4; }
+        .warning-item .wi-code { font-size: 0.7rem; color: var(--text-dim); opacity: 0.7; margin-top: 2px; }
+
+        /* ── Failure Detail Card ─────────────── */
+        .failure-detail {
+            background: var(--surface2);
+            border-radius: 8px;
+            padding: 0.8rem 1rem;
+            margin-top: 0.6rem;
+        }
+        .failure-detail .fd-row {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.35rem 0;
+            font-size: 0.82rem;
+        }
+        .failure-detail .fd-label {
+            color: var(--text-dim);
+            min-width: 80px;
+            flex-shrink: 0;
+            font-weight: 600;
+        }
+        .failure-detail .fd-value {
+            color: var(--text);
+            line-height: 1.4;
+        }
+        .error-banner .error-title {
+            color: var(--red);
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .error-banner .error-msg {
+            font-size: 0.85rem;
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .error-banner .error-detail {
+            margin-top: 0.75rem;
+            padding: 0.75rem;
+            background: var(--bg);
+            border-radius: 6px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* ── Error row in table ─────────────────── */
+        .error-preview {
+            font-size: 0.7rem;
+            color: var(--red);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-top: 0.2rem;
+        }
+        .badge.summarized { background: rgba(139,92,246,.15); color: #a78bfa; }
+
+        /* ── Settings Panel ────────────────────── */
+        .settings-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.9rem 1.25rem;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .settings-header:hover { background: var(--surface2); }
+        .settings-header h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .settings-chevron {
+            transition: transform 0.2s;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        .settings-panel.open .settings-chevron {
+            transform: rotate(180deg);
+        }
+        .settings-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.35s ease;
+        }
+        .settings-panel.open .settings-body {
+            max-height: 2000px;
+        }
+        .settings-content {
+            padding: 0 1.25rem 1.25rem;
+        }
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        .setting-group {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        .setting-group h4 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            margin-bottom: 0.75rem;
+        }
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.6rem;
+            position: relative;
+        }
+        .setting-row:last-child { margin-bottom: 0; }
+        .setting-row[data-tip] {
+            cursor: help;
+        }
+        .setting-row[data-tip] .setting-label::after {
+            content: 'ⓘ';
+            font-size: 0.7rem;
+            color: var(--accent);
+            margin-left: 2px;
+            opacity: 0.6;
+        }
+        .setting-row[data-tip]:hover .setting-label::after {
+            opacity: 1;
+        }
+        /* Floating tooltip (JS-driven) */
+        .floating-tip {
+            position: fixed;
+            background: #1a1a2e;
+            color: #e2e8f0;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--accent);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            z-index: 9999;
+            pointer-events: none;
+            max-width: 320px;
+            animation: tipFade 0.15s ease;
+        }
+        .floating-tip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 24px;
+            border: 6px solid transparent;
+            border-top-color: var(--accent);
+        }
+        @keyframes tipFade {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .setting-label {
+            font-size: 0.82rem;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .setting-label .hint {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+        /* Toggle switch */
+        .toggle {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle .slider {
+            position: absolute;
+            inset: 0;
+            background: var(--surface2);
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle .slider::before {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle input:checked + .slider {
+            background: var(--accent);
+        }
+        .toggle input:checked + .slider::before {
+            transform: translateX(18px);
+        }
+        /* Range slider */
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.3rem;
+        }
+        .range-row input[type="range"] {
+            flex: 1;
+            accent-color: var(--accent);
+            height: 4px;
+            cursor: pointer;
+        }
+        .range-value {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 40px;
+            text-align: right;
+        }
+        .settings-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1.25rem;
+            justify-content: flex-end;
+        }
+        .settings-actions button {
+            padding: 0.5rem 1.25rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .btn-reset {
+            background: var(--surface2);
+            color: var(--text);
+        }
+        .btn-reset:hover { background: var(--border); }
+        .btn-apply {
+            background: var(--accent);
+            color: white;
+        }
+        .btn-apply:hover { background: var(--accent-hover); }
+
+        /* ── OCR Extracted Tables ────────────── */
+        .ocr-table-container {
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+        .ocr-table-container table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+        .ocr-table-container th,
+        .ocr-table-container td {
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        .ocr-table-container th {
+            background: var(--surface2);
+            font-weight: 600;
+            color: var(--accent);
+        }
+        .ocr-table-container tr:nth-child(even) td {
+            background: rgba(51,65,85,0.3);
+        }
+        .ocr-table-caption {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            margin-bottom: 0.4rem;
+        }
+        .figure-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .figure-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--surface2);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.82rem;
+        }
+        .figure-icon {
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1><span class="icon">🔬</span> Pre-OCR Pipeline Dashboard</h1>
+    <div style="display:flex;gap:0.5rem">
+        <button class="refresh-btn" onclick="loadDocuments()">↻ Refresh</button>
+    </div>
+</div>
+
+<!-- Toast notifications -->
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="container">
+    <!-- Config -->
+    <div class="config-bar">
+        <label>API Base URL:</label>
+        <input type="text" id="apiBase" placeholder="https://preocr-dev-func-XXXXX.azurewebsites.net/api" />
+        <label>Function Key:</label>
+        <input type="password" id="apiKey" placeholder="paste function key here" />
+        <button onclick="saveConfig()">Connect</button>
+    </div>
+
+    <!-- Upload Zone -->
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📤</div>
+        <div class="upload-text"><strong>Click to upload</strong> or drag &amp; drop files here</div>
+        <div class="upload-hint">Supports PDF, PNG, JPG, TIFF, BMP</div>
+        <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp" multiple onchange="handleFileSelect(this.files)" />
+        <div class="upload-progress" id="uploadProgress">
+            <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+            <div class="upload-status" id="uploadStatus"></div>
+        </div>
+    </div>
+
+    <!-- Pipeline Tracker -->
+    <div id="pipelineTracker" style="display:none;"></div>
+
+    <!-- Preprocessing Settings Panel -->
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header" onclick="toggleSettings()">
+            <h3>⚙️ Preprocessing Settings</h3>
+            <span class="settings-chevron">▼</span>
+        </div>
+        <div class="settings-body">
+            <div class="settings-content">
+                <div class="settings-grid">
+                    <!-- Pipeline Steps -->
+                    <div class="setting-group">
+                        <h4>🔧 Pipeline Steps</h4>
+                        <div class="setting-row" data-tip="Automatically detects and removes excess white/black borders and margins around the scanned content. Uses contour detection to find the actual content area.">
+                            <span class="setting-label">Auto-Crop <span class="hint">(border removal)</span></span>
+                            <label class="toggle"><input type="checkbox" id="sEnableAutocrop" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Reduces scanner noise and grain using non-local means denoising. Smooths out speckles without blurring text edges. Strength is controlled by the Denoise Strength slider.">
+                            <span class="setting-label">Denoise</span>
+                            <label class="toggle"><input type="checkbox" id="sEnableDenoise" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Detects and corrects page rotation caused by crooked scanning. Straightens the image so text lines are perfectly horizontal, improving OCR accuracy.">
+                            <span class="setting-label">Deskew <span class="hint">(straighten)</span></span>
+                            <label class="toggle"><input type="checkbox" id="sEnableDeskew" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Enlarges low-resolution images (below the Upscale Below threshold) by 2x using bicubic interpolation. Higher resolution helps OCR engines recognize small characters.">
+                            <span class="setting-label">Upscale <span class="hint">(low DPI)</span></span>
+                            <label class="toggle"><input type="checkbox" id="sEnableUpscale" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Corrects dark or washed-out scans. Applies CLAHE (adaptive histogram equalization) then matches the output brightness to the original, preventing over-brightening.">
+                            <span class="setting-label">Brightness Fix</span>
+                            <label class="toggle"><input type="checkbox" id="sEnableBrightness" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Enhances low-contrast scans where text appears faded. Uses CLAHE to improve local contrast, making text stand out from the background for better OCR readability.">
+                            <span class="setting-label">Contrast Fix</span>
+                            <label class="toggle"><input type="checkbox" id="sEnableContrast" checked><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Enables stronger preprocessing: higher denoise intensity, stronger adaptive thresholding, and more aggressive contrast enhancement. Use for very poor quality scans.">
+                            <span class="setting-label">Aggressive Mode</span>
+                            <label class="toggle"><input type="checkbox" id="sAggressive"><span class="slider"></span></label>
+                        </div>
+                    </div>
+
+                    <!-- Tuning Parameters -->
+                    <div class="setting-group">
+                        <h4>🎛️ Tuning Parameters</h4>
+                        <div class="setting-row" data-tip="Controls noise removal intensity (h parameter for cv2.fastNlMeansDenoising). Low values (1-5) preserve detail; high values (10-20) remove heavy noise but may soften text.">
+                            <span class="setting-label">Denoise Strength</span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sDenoiseH" min="1" max="20" value="3" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sDenoiseH_val">3</span>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="CLAHE clip limit controls how much contrast enhancement is applied. Lower values (0.5-2.0) give subtle correction; higher values (3.0-5.0) produce dramatic contrast changes. Too high can create artifacts.">
+                            <span class="setting-label">CLAHE Clip Limit</span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sClaheClip" min="0.5" max="5.0" step="0.1" value="1.5" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sClaheClip_val">1.5</span>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="Pixels of padding to keep around the detected content when auto-cropping. Higher values (20-50px) leave more border; 0 crops tightly to content edge.">
+                            <span class="setting-label">Auto-Crop Margin <span class="hint">(px)</span></span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sAutocropMargin" min="0" max="50" value="10" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sAutocropMargin_val">10</span>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="Always apply adaptive thresholding (black & white conversion), even if the image diagnosis says it's not needed. Useful for forms with faint printed text.">
+                            <span class="setting-label">Force Threshold</span>
+                            <label class="toggle"><input type="checkbox" id="sForceThreshold"><span class="slider"></span></label>
+                        </div>
+                        <div class="setting-row" data-tip="Always upscale the image by 2x regardless of its current resolution. Use when you know the source is low DPI but the auto-detection doesn't trigger.">
+                            <span class="setting-label">Force Upscale</span>
+                            <label class="toggle"><input type="checkbox" id="sForceUpscale"><span class="slider"></span></label>
+                        </div>
+                    </div>
+
+                    <!-- Diagnosis Thresholds -->
+                    <div class="setting-group">
+                        <h4>📏 Diagnosis Thresholds</h4>
+                        <div class="setting-row" data-tip="Mean brightness below this value triggers the brightness fix. Images with average pixel brightness under this threshold are considered 'dark'. Range: 0 (black) to 255 (white).">
+                            <span class="setting-label">Dark Threshold <span class="hint">(brightness)</span></span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sDarkThreshold" min="50" max="220" value="140" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sDarkThreshold_val">140</span>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="Laplacian variance above this value means the image is 'noisy' and denoising will be applied. Lower values trigger denoising more easily; higher values only denoise very grainy scans.">
+                            <span class="setting-label">Noise Threshold</span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sNoiseThreshold" min="1" max="30" step="0.5" value="8" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sNoiseThreshold_val">8</span>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="Standard deviation of pixel brightness below this value means the image has 'low contrast'. The contrast fix (CLAHE) will be applied to make text more visible. Higher values trigger contrast fix more often.">
+                            <span class="setting-label">Contrast Threshold <span class="hint">(stddev)</span></span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sContrastThreshold" min="10" max="100" value="50" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sContrastThreshold_val">50</span>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="Min angle: rotations below this are ignored (prevents micro-corrections). Max angle: rotations above this are capped (prevents overcorrection on heavily skewed pages). Angles outside this range are not corrected.">
+                            <span class="setting-label">Skew Angle Range <span class="hint">(degrees)</span></span>
+                        </div>
+                        <div class="range-row" style="flex-wrap:wrap;">
+                            <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:0;">
+                                <span style="font-size:0.75rem;color:var(--text-dim);white-space:nowrap;">Min</span>
+                                <input type="range" id="sSkewMin" min="0.1" max="5" step="0.1" value="0.5" style="flex:1;min-width:0;" oninput="updateRangeDisplay(this)">
+                                <span class="range-value" id="sSkewMin_val">0.5°</span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:0;">
+                                <span style="font-size:0.75rem;color:var(--text-dim);white-space:nowrap;">Max</span>
+                                <input type="range" id="sSkewMax" min="5" max="45" value="15" style="flex:1;min-width:0;" oninput="updateRangeDisplay(this)">
+                                <span class="range-value" id="sSkewMax_val">15°</span>
+                            </div>
+                        </div>
+                        <div class="setting-row" style="margin-top:0.6rem" data-tip="Images with both width and height below this pixel count will be upscaled 2x. For example, 2400 means a 1200x1600 image would be enlarged to 2400x3200 for better OCR character recognition.">
+                            <span class="setting-label">Upscale Below <span class="hint">(px)</span></span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="sUpscaleBelow" min="500" max="4000" step="100" value="2400" oninput="updateRangeDisplay(this)">
+                            <span class="range-value" id="sUpscaleBelow_val">2400</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-actions">
+                    <button class="btn-reset" onclick="resetSettings()">↺ Reset Defaults</button>
+                    <button class="btn-apply" onclick="saveSettings()">💾 Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar" id="statsBar">
+        <div class="stat-card"><div class="label">Total Documents</div><div class="value blue" id="statTotal">-</div></div>
+        <div class="stat-card"><div class="label">OCR Completed</div><div class="value green" id="statSuccess">-</div></div>
+        <div class="stat-card"><div class="label">Failed</div><div class="value red" id="statFailed">-</div></div>
+        <div class="stat-card"><div class="label">Warnings</div><div class="value yellow" id="statWarnings">-</div></div>
+        <div class="stat-card"><div class="label">Avg. OCR Readiness</div><div class="value yellow" id="statAvgScore">-</div></div>
+    </div>
+
+    <!-- Documents Table -->
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Source File</th>
+                    <th>Pages</th>
+                    <th>Blur Score</th>
+                    <th>Redaction %</th>
+                    <th>OCR Readiness</th>
+                    <th>Action</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody id="docTableBody">
+                <tr><td colspan="8" class="loading"><div class="spinner"></div>Enter API URL and key above, then click Connect</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="modalTitle">Document Details</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            <div class="loading"><div class="spinner"></div>Loading…</div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Toast Notifications ─────────────────
+function showToast(type, title, msg, duration = 8000) {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        <span class="toast-icon">${type === 'error' ? '❌' : '✅'}</span>
+        <div class="toast-body">
+            <div class="toast-title">${escapeHtml(title)}</div>
+            <div class="toast-msg">${escapeHtml(msg)}</div>
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+    `;
+    container.appendChild(toast);
+    if (duration > 0) setTimeout(() => toast.remove(), duration);
+}
+
+// ── Config ──────────────────────────────
+function getConfig() {
+    return {
+        base: document.getElementById('apiBase').value.replace(/\/$/, ''),
+        key: document.getElementById('apiKey').value,
+    };
+}
+
+function saveConfig() {
+    const { base, key } = getConfig();
+    localStorage.setItem('preocr_api_base', base);
+    localStorage.setItem('preocr_api_key', key);
+    loadDocuments();
+}
+
+function loadConfig() {
+    const base = localStorage.getItem('preocr_api_base') || '';
+    const key = localStorage.getItem('preocr_api_key') || '';
+    document.getElementById('apiBase').value = base;
+    document.getElementById('apiKey').value = key;
+    if (base && key) loadDocuments();
+}
+
+function apiUrl(path) {
+    const { base, key } = getConfig();
+    const sep = path.includes('?') ? '&' : '?';
+    return `${base}/${path}${sep}code=${encodeURIComponent(key)}`;
+}
+
+// ── Documents List ──────────────────────
+let allDocs = [];
+
+async function loadDocuments() {
+    const tbody = document.getElementById('docTableBody');
+    tbody.innerHTML = '<tr><td colspan="8" class="loading"><div class="spinner"></div>Loading documents…</td></tr>';
+
+    try {
+        const resp = await fetch(apiUrl('documents'));
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        allDocs = await resp.json();
+        renderTable();
+        renderStats();
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="loading">❌ Failed to load: ${err.message}</td></tr>`;
+    }
+}
+
+function renderStats() {
+    document.getElementById('statTotal').textContent = allDocs.length;
+    document.getElementById('statSuccess').textContent = allDocs.filter(d => d.ocrCompleted).length;
+    document.getElementById('statFailed').textContent = allDocs.filter(d => d.failure).length;
+    const warnedCount = allDocs.filter(d => (d.aggregated?.qualityWarnings || []).length > 0).length;
+    const warnEl = document.getElementById('statWarnings');
+    if (warnEl) warnEl.textContent = warnedCount;
+    const scores = allDocs.map(d => d.aggregated?.avgOcrReadinessScore).filter(s => s != null);
+    const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    document.getElementById('statAvgScore').textContent = avg.toFixed(3);
+}
+
+function renderTable() {
+    const tbody = document.getElementById('docTableBody');
+    if (!allDocs.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="icon">📭</div>No documents processed yet.<br>Upload a file to the <b>raw</b> container to get started.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = allDocs.map(doc => {
+        const agg = doc.aggregated || {};
+        const action = agg.recommendedNextAction || '-';
+        const score = agg.avgOcrReadinessScore ?? 0;
+        const blur = agg.avgBlurScore ?? 0;
+        const redact = agg.avgRedactionPercent ?? 0;
+        const scoreColor = score >= 0.5 ? 'var(--green)' : score >= 0.3 ? 'var(--yellow)' : 'var(--red)';
+
+        let statusBadge;
+        if (doc.ocrCompleted && doc.summaryCompleted) statusBadge = '<span class="badge success">Summarized</span>';
+        else if (doc.ocrCompleted) statusBadge = '<span class="badge success">OCR Done</span>';
+        else if (doc.failure) statusBadge = `<span class="badge fail">${doc.failure.failureCode || 'FAILED'}</span><div class="error-preview" title="${escapeAttr(doc.failure.message || doc.failure.error || '')}">${escapeHtml(doc.failure.message || doc.failure.error || 'Unknown error')}</div>`;
+        else if (action === 'retry_stronger') statusBadge = '<span class="badge retry">Retried</span>';
+        else statusBadge = '<span class="badge pending">Pending</span>';
+
+        // Quality warning indicator in list view
+        const warnCount = (agg.qualityWarnings || []).length;
+        const warnBadge = warnCount > 0 ? ` <span class="badge" style="background:rgba(234,179,8,.15);color:var(--yellow);font-size:0.65rem;padding:2px 5px" title="${warnCount} quality warning${warnCount>1?'s':''}">\u26a0${warnCount}</span>` : '';
+        // Vision model indicator in list view
+        const visionBadge = doc.visionUsed ? ' <span class="badge" style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:0.65rem;padding:2px 5px" title="Contains charts/figures – analyzed with GPT-4o Vision">🔬 Vision</span>' : '';
+        // Failure description tooltip in list view
+        const failDescTitle = agg.failureDescription ? ` title="${escapeAttr(agg.failureDescription.title + ': ' + agg.failureDescription.description)}"` : '';
+
+        const time = doc.timestamp ? new Date(doc.timestamp).toLocaleString() : '-';
+
+        return `<tr onclick="openDocument('${doc.docId}')">
+            <td title="${doc.docId}">${doc.sourceBlobPath || doc.docId}</td>
+            <td>${doc.pageCount}</td>
+            <td>${blur.toFixed(0)}</td>
+            <td>${redact.toFixed(1)}%</td>
+            <td>
+                <div class="score-bar"><div class="fill" style="width:${score*100}%; background:${scoreColor}"></div></div>
+                ${score.toFixed(3)}
+            </td>
+            <td><span class="badge ${action === 'run_doc_intel' ? 'success' : action === 'fail' ? 'fail' : 'retry'}"${failDescTitle}>${action}</span></td>
+            <td>${statusBadge}${warnBadge}${visionBadge}</td>
+            <td style="font-size:0.8rem; color:var(--text-dim)">${time}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Document Detail ─────────────────────
+async function openDocument(docId) {
+    const overlay = document.getElementById('modalOverlay');
+    const body = document.getElementById('modalBody');
+    const title = document.getElementById('modalTitle');
+
+    overlay.classList.add('active');
+    title.textContent = `Document: ${docId}`;
+    body.innerHTML = '<div class="loading"><div class="spinner"></div>Loading details…</div>';
+
+    try {
+        const resp = await fetch(apiUrl(`documents/${docId}`));
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        renderDetail(data, docId);
+        // Load original image after DOM is rendered
+        loadOriginalImage(docId, 1);
+    } catch (err) {
+        body.innerHTML = `<div class="loading">❌ ${err.message}</div>`;
+    }
+}
+
+function renderDetail(data, docId) {
+    const body = document.getElementById('modalBody');
+    const pp = data.preprocess || {};
+    const agg = pp.aggregated || {};
+    const pages = pp.pages || [];
+    const ocr = data.ocr;
+    const failure = data.failure;
+    const summary = data.summary;
+
+    // Extract OCR text
+    let ocrContent = '';
+    if (ocr?.analyzeResult?.content) {
+        ocrContent = ocr.analyzeResult.content;
+    } else if (ocr?.status === 'running') {
+        ocrContent = '⏳ OCR still processing…';
+    } else if (failure) {
+        ocrContent = `❌ Failed: ${failure.failureCode || 'Unknown'}\n${failure.message || ''}`;
+    } else {
+        ocrContent = 'No OCR result available.';
+    }
+
+    // OCR confidence stats
+    let confidenceHtml = '';
+    if (ocr?.analyzeResult?.pages) {
+        const allWords = ocr.analyzeResult.pages.flatMap(p => p.words || []);
+        const total = allWords.length;
+        const high = allWords.filter(w => w.confidence >= 0.9).length;
+        const mid = allWords.filter(w => w.confidence >= 0.5 && w.confidence < 0.9).length;
+        const low = allWords.filter(w => w.confidence < 0.5).length;
+        const avgConf = total ? (allWords.reduce((s, w) => s + w.confidence, 0) / total) : 0;
+
+        confidenceHtml = `
+            <div class="detail-section">
+                <h3>🎯 OCR Confidence</h3>
+                <div class="metrics-grid">
+                    <div class="metric-item"><div class="metric-label">Total Words</div><div class="metric-value">${total}</div></div>
+                    <div class="metric-item"><div class="metric-label">Avg Confidence</div><div class="metric-value" style="color:${avgConf>=0.9?'var(--green)':avgConf>=0.7?'var(--yellow)':'var(--red)'}">${(avgConf*100).toFixed(1)}%</div></div>
+                    <div class="metric-item"><div class="metric-label">High (≥90%)</div><div class="metric-value" style="color:var(--green)">${high}</div></div>
+                    <div class="metric-item"><div class="metric-label">Low (<50%)</div><div class="metric-value" style="color:var(--red)">${low}</div></div>
+                </div>
+            </div>`;
+    }
+
+    // Page tabs
+    let pageTabs = '';
+    if (pages.length > 1) {
+        pageTabs = `<div class="page-tabs">${pages.map((_, i) =>
+            `<div class="page-tab ${i===0?'active':''}" onclick="switchPage('${docId}', ${i+1}, this)">Page ${i+1}</div>`
+        ).join('')}</div>`;
+    }
+
+    const scoreColor = (v) => v >= 0.5 ? 'var(--green)' : v >= 0.3 ? 'var(--yellow)' : 'var(--red)';
+    const blurColor = (v) => v >= 50 ? 'var(--green)' : 'var(--red)';
+
+    // Region detection info (from first page, or aggregate)
+    let regionHtml = '';
+    const firstPageRegions = pages[0]?.regionDetection;
+    if (firstPageRegions && firstPageRegions.totalRegions > 0) {
+        const regionIcons = { stamp: '🔴', signature: '✍️', table: '📋', text: '📄' };
+        const regionColors = { stamp: 'var(--red)', signature: 'var(--accent)', table: 'var(--yellow)', text: 'var(--text-dim)' };
+
+        const summaryParts = [];
+        if (firstPageRegions.stamps > 0) summaryParts.push(`<div class="region-stat">🔴 <span class="count">${firstPageRegions.stamps}</span> stamp${firstPageRegions.stamps>1?'s':''}</div>`);
+        if (firstPageRegions.signatures > 0) summaryParts.push(`<div class="region-stat">✍️ <span class="count">${firstPageRegions.signatures}</span> signature${firstPageRegions.signatures>1?'s':''}</div>`);
+        if (firstPageRegions.tables > 0) summaryParts.push(`<div class="region-stat">📋 <span class="count">${firstPageRegions.tables}</span> table${firstPageRegions.tables>1?'s':''}</div>`);
+
+        const regionsList = (firstPageRegions.regions || []).map(r => {
+            const icon = regionIcons[r.type] || '❓';
+            const color = regionColors[r.type] || 'var(--text)';
+            const b = r.bbox;
+            return `<div class="region-item">
+                <div class="region-icon">${icon}</div>
+                <div class="region-info">
+                    <div class="region-type" style="color:${color}">${r.type}</div>
+                    <div class="region-coords">${b.w}×${b.h} px at (${b.x}, ${b.y})</div>
+                </div>
+                <div class="region-conf" style="color:${r.confidence>=0.7?'var(--green)':r.confidence>=0.4?'var(--yellow)':'var(--text-dim)'}">${(r.confidence*100).toFixed(0)}%</div>
+            </div>`;
+        }).join('');
+
+        regionHtml = `
+            <div class="detail-section" style="margin-top:1rem">
+                <h3>🔍 Region Detection ${firstPageRegions.hasProtectedRegions ? '<span class="badge" style="background:rgba(234,179,8,.15);color:var(--yellow);margin-left:0.5rem">Protected regions</span>' : ''}</h3>
+                <div class="region-summary">${summaryParts.join('')}</div>
+                <div class="region-list">${regionsList}</div>
+                ${firstPageRegions.hasProtectedRegions ? '<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem">ℹ️ Stamps, signatures, and tables are protected from aggressive binarisation during preprocessing.</div>' : ''}
+            </div>`;
+    }
+
+    // Check if any page had preprocessing skipped
+    const skippedPages = pages.filter(p => p.preprocessingSkipped);
+    const allSkipped = skippedPages.length === pages.length && pages.length > 0;
+    const someSkipped = skippedPages.length > 0 && !allSkipped;
+    const skipBanner = allSkipped
+        ? '<div style="background:rgba(59,130,246,.12);border:1px solid var(--accent);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem"><strong style="color:var(--accent)">\u2728 Preprocessing skipped</strong> \u2014 The original image was already clean enough for OCR. No enhancement needed.</div>'
+        : someSkipped
+            ? `<div style="background:rgba(59,130,246,.12);border:1px solid var(--accent);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem"><strong style="color:var(--accent)">\u2728 Partially skipped</strong> \u2014 ${skippedPages.length} of ${pages.length} page(s) were already clean enough.</div>`
+            : '';
+
+    // ── Enhancement Details ─────────────────────────────────
+    let enhancementHtml = '';
+    const enh = pages[0]?.enhancement;
+    if (enh) {
+        const stepLabels = {
+            grayscale: { icon: '🔲', label: 'Grayscale' },
+            auto_crop: { icon: '✂️', label: 'Auto Crop' },
+            denoise: { icon: '🧹', label: 'Denoise' },
+            brightness_fix: { icon: '☀️', label: 'Brightness Fix' },
+            contrast_fix: { icon: '🎛️', label: 'Contrast Fix' },
+            deskew: { icon: '📐', label: 'Deskew' },
+            upscale: { icon: '🔍', label: 'Upscale' },
+            dimension_cap: { icon: '📏', label: 'Dimension Cap' },
+        };
+        const allSteps = ['grayscale', 'auto_crop', 'denoise', 'brightness_fix', 'contrast_fix', 'deskew', 'upscale', 'dimension_cap'];
+        const applied = enh.stepsApplied || [];
+
+        const stepsHtml = allSteps.map(s => {
+            const info = stepLabels[s] || { icon: '⚙️', label: s };
+            const isApplied = applied.includes(s);
+            return `<span class="enhance-step ${isApplied ? 'applied' : 'skipped'}">${info.icon} ${info.label}</span>`;
+        }).join('');
+
+        const origDim = enh.originalDimensions || {};
+        const enhDim = enh.enhancedDimensions || {};
+        const crop = enh.autoCrop;
+        const diag = enh.diagnosis || {};
+
+        const diagItems = [
+            { label: 'Brightness', val: diag.meanBrightness, flag: diag.isDark, unit: '' },
+            { label: 'Noise', val: diag.noiseEstimate, flag: diag.isNoisy, unit: '' },
+            { label: 'Contrast', val: diag.contrast, flag: diag.isLowContrast, unit: '' },
+            { label: 'Skew', val: diag.skewAngle, flag: diag.isSkewed, unit: '°' },
+        ].filter(d => d.val !== undefined);
+
+        const diagHtml = diagItems.map(d =>
+            `<div class="diag-item">
+                <span class="diag-label">${d.label}</span>
+                <span class="diag-val" style="color:${d.flag ? 'var(--red)' : 'var(--green)'}">
+                    ${d.val}${d.unit} ${d.flag ? '⚠' : '✓'}
+                </span>
+            </div>`
+        ).join('');
+
+        enhancementHtml = `
+            <div class="detail-section" style="margin-top:1rem">
+                <h3>🔧 Enhancement Details
+                    ${enh.aggressive ? '<span class="badge" style="background:rgba(234,179,8,.15);color:var(--yellow);margin-left:0.5rem">Aggressive</span>' : ''}
+                    <span class="badge" style="background:rgba(34,197,94,.12);color:var(--green);margin-left:0.5rem">${applied.length - 1} fix${applied.length - 1 !== 1 ? 'es' : ''} applied</span>
+                </h3>
+
+                <div class="enhance-grid">
+                    <div class="enhance-card">
+                        <div class="enhance-card-title">Original</div>
+                        <div class="enhance-dim">${origDim.w || '?'} × ${origDim.h || '?'}</div>
+                        <div class="enhance-dim-sub">pixels</div>
+                    </div>
+                    <div class="enhance-card">
+                        <div class="enhance-card-title">Enhanced</div>
+                        <div class="enhance-dim">${enhDim.w || '?'} × ${enhDim.h || '?'}</div>
+                        <div class="enhance-dim-sub">${enh.fileSizeKB ? enh.fileSizeKB + ' KB' : ''}</div>
+                    </div>
+                </div>
+
+                ${crop ? `<div class="enhance-card" style="margin-bottom:0.75rem">
+                    <div class="enhance-card-title">✂️ Auto Crop</div>
+                    <div style="font-size:0.8rem;color:var(--text)">
+                        ${crop.before.w}×${crop.before.h} → ${crop.after.w}×${crop.after.h}
+                        <span style="color:var(--green);font-weight:600;margin-left:0.5rem">−${crop.removedPct}% area</span>
+                    </div>
+                </div>` : ''}
+
+                <div class="enhance-card-title" style="margin-top:0.25rem">Diagnosis</div>
+                <div class="diag-grid">${diagHtml}</div>
+
+                <div class="enhance-card-title" style="margin-top:0.75rem">Pipeline Steps</div>
+                <div class="enhance-steps">${stepsHtml}</div>
+            </div>`;
+    }
+
+    // Error banner for failures — with granular descriptions
+    let errorBanner = '';
+    if (failure) {
+        const failCode = failure.failureCode || failure.statusCode || 'ERROR';
+        const failMsg = failure.message || failure.error || 'An unknown error occurred during processing.';
+        const failDetail = failure.detail || failure.body || '';
+        errorBanner = `
+            <div class="error-banner">
+                <div class="error-title">\u26a0\ufe0f Pipeline Error \u2014 ${escapeHtml(String(failCode))}</div>
+                <div class="error-msg">${escapeHtml(failMsg)}</div>
+                ${failDetail ? `<div class="error-detail">${escapeHtml(typeof failDetail === 'object' ? JSON.stringify(failDetail, null, 2) : String(failDetail))}</div>` : ''}
+            </div>`;
+    }
+
+    // Granular failure description from aggregated metrics
+    const failDesc = agg.failureDescription;
+    let failureDetailBanner = '';
+    if (failDesc) {
+        failureDetailBanner = `
+            <div class="error-banner">
+                <div class="error-title">\u274c ${escapeHtml(agg.failureCode || 'ERROR')} \u2014 ${escapeHtml(failDesc.title)}</div>
+                <div class="error-msg">${escapeHtml(failDesc.description)}</div>
+                <div class="failure-detail">
+                    <div class="fd-row"><div class="fd-label">\ud83d\udd0d Cause</div><div class="fd-value">${escapeHtml(failDesc.cause)}</div></div>
+                    <div class="fd-row"><div class="fd-label">\ud83d\udca1 Fix</div><div class="fd-value">${escapeHtml(failDesc.suggestion)}</div></div>
+                    <div class="fd-row"><div class="fd-label">\ud83d\udcca Metrics</div><div class="fd-value">Blur: ${(agg.avgBlurScore||0).toFixed(1)} | Redaction: ${(agg.avgRedactionPercent||0).toFixed(1)}% | OCR Readiness: ${(agg.avgOcrReadinessScore||0).toFixed(3)}</div></div>
+                </div>
+            </div>`;
+    }
+
+    // Check for per-page failures
+    const failedPages = pages.filter(p => p.failureCode || p.error);
+    let pageErrorBanner = '';
+    if (failedPages.length > 0) {
+        const lines = failedPages.map(p =>
+            `Page ${p.pageNumber}: [${p.failureCode || 'ERR'}] ${p.error || 'Unknown error'}`
+        ).join('\n');
+        pageErrorBanner = `
+            <div class="error-banner">
+                <div class="error-title">\u26a0\ufe0f Page Processing Errors (${failedPages.length} page${failedPages.length > 1 ? 's' : ''})</div>
+                <div class="error-msg">${escapeHtml(lines)}</div>
+            </div>`;
+    }
+
+    // Quality warnings banner for marginal-quality documents
+    const qualityWarnings = agg.qualityWarnings || [];
+    let warningBanner = '';
+    if (qualityWarnings.length > 0) {
+        const sevIcon = (s) => s === 'high' ? '\ud83d\udfe0' : '\u26a0\ufe0f';
+        const items = qualityWarnings.map(w => `
+            <div class="warning-item severity-${w.severity || 'medium'}">
+                <div class="wi-icon">${sevIcon(w.severity)}</div>
+                <div>
+                    <div class="wi-title">${escapeHtml(w.title)}</div>
+                    <div class="wi-msg">${escapeHtml(w.message)}</div>
+                    <div class="wi-code">${w.code}${w.value !== undefined ? ' | Value: ' + w.value : ''}${w.threshold !== undefined ? ' | Threshold: ' + w.threshold : ''}</div>
+                </div>
+            </div>
+        `).join('');
+
+        warningBanner = `
+            <div class="warning-banner">
+                <div class="warning-title">\u26a0\ufe0f Quality Warnings (${qualityWarnings.length})</div>
+                ${items}
+            </div>`;
+    }
+
+    body.innerHTML = `
+        ${errorBanner}
+        ${failureDetailBanner}
+        ${warningBanner}
+        ${pageErrorBanner}
+        ${skipBanner}
+        ${pageTabs}
+
+        <!-- Before / After Comparison — FULL WIDTH -->
+        <div class="detail-section" style="margin-bottom:1.5rem">
+            <h3>🖼️ Before &amp; After Comparison ${allSkipped ? '<span class="badge" style="background:rgba(59,130,246,.15);color:var(--accent);margin-left:0.5rem">identical – no changes made</span>' : ''}</h3>
+            <div class="compare-container">
+                <div class="compare-pane before">
+                    <div class="compare-label">Original</div>
+                    <div id="originalPreview">
+                        <div class="img-loading"><div class="spinner"></div>Loading original…</div>
+                    </div>
+                </div>
+                <div class="compare-pane after">
+                    <div class="compare-label">Enhanced</div>
+                    <div id="imagePreview">
+                        <img src="${apiUrl(`image/${docId}/1`)}" alt="Enhanced page" 
+                             onerror="this.parentElement.innerHTML='<div class=img-placeholder>Enhanced image not available</div>'" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="detail-grid">
+            <div>
+                <div class="detail-section" style="margin-top:1rem">
+                    <h3>📊 Quality Metrics</h3>
+                    ${(() => {
+                        const validPages = pages.filter(p => p.failureCode !== 'F07');
+                        // Only include pages that were actually enhanced (not skipped) for enhanced averages
+                        const enhPages = validPages.filter(p => p.enhancedBlurScore != null && p.enhancedBlurScore > 0);
+                        const avgEnhBlur = enhPages.length
+                            ? enhPages.reduce((s,p) => s + p.enhancedBlurScore, 0) / enhPages.length : null;
+                        const avgEnhOcr = enhPages.length
+                            ? enhPages.reduce((s,p) => s + (p.enhancedOcrReadinessScore||0), 0) / enhPages.length : null;
+                        // For the original-side comparison, use same enhanced pages so the arrow % is meaningful
+                        const avgOrigBlurForComp = enhPages.length
+                            ? enhPages.reduce((s,p) => s + (p.blurScore||0), 0) / enhPages.length : 0;
+                        const avgOrigOcrForComp = enhPages.length
+                            ? enhPages.reduce((s,p) => s + (p.ocrReadinessScore||0), 0) / enhPages.length : 0;
+                        const hasEnhanced = avgEnhBlur !== null && avgEnhBlur > 0;
+                        const arrow = (before, after) => {
+                            if (after == null || after === 0) return '';
+                            const diff = after - before;
+                            const pct = before > 0 ? ((diff / before) * 100).toFixed(0) : '∞';
+                            const color = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text-dim)';
+                            const icon = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
+                            return '<span style="font-size:0.7rem;color:' + color + ';margin-left:4px">' + icon + (diff > 0 ? '+' : '') + pct + '%</span>';
+                        };
+                        return `
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-label">Blur Score <span style="font-size:0.65rem;color:var(--text-dim)">(original)</span></div>
+                            <div class="metric-value" style="color:${blurColor(agg.avgBlurScore||0)}">${(agg.avgBlurScore||0).toFixed(0)}</div>
+                        </div>
+                        ${hasEnhanced ? `<div class="metric-item">
+                            <div class="metric-label">Blur Score <span style="font-size:0.65rem;color:var(--accent)">(enhanced)</span></div>
+                            <div class="metric-value" style="color:${blurColor(avgEnhBlur)}">${avgEnhBlur.toFixed(0)}${arrow(avgOrigBlurForComp, avgEnhBlur)}</div>
+                        </div>` : ''}
+                        <div class="metric-item">
+                            <div class="metric-label">Estimated DPI</div>
+                            <div class="metric-value">${pages[0]?.estimatedDpi || '-'}</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Redaction %</div>
+                            <div class="metric-value">${(agg.avgRedactionPercent||0).toFixed(1)}%</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">OCR Readiness <span style="font-size:0.65rem;color:var(--text-dim)">(original)</span></div>
+                            <div class="metric-value" style="color:${scoreColor(agg.avgOcrReadinessScore||0)}">${(agg.avgOcrReadinessScore||0).toFixed(3)}</div>
+                        </div>
+                        ${hasEnhanced ? `<div class="metric-item">
+                            <div class="metric-label">OCR Readiness <span style="font-size:0.65rem;color:var(--accent)">(enhanced)</span></div>
+                            <div class="metric-value" style="color:${scoreColor(avgEnhOcr)}">${avgEnhOcr.toFixed(3)}${arrow(avgOrigOcrForComp, avgEnhOcr)}</div>
+                        </div>` : ''}
+                        <div class="metric-item">
+                            <div class="metric-label">Decision</div>
+                            <div class="metric-value" style="font-size:0.9rem">${agg.recommendedNextAction||'-'}</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Failure Code</div>
+                            <div class="metric-value" style="color:${agg.failureCode?'var(--red)':'var(--green)'}">${agg.failureCode||'None'}</div>
+                        </div>
+                    </div>`;
+                    })()}
+                </div>
+
+                <!-- Enhancement Details -->
+                ${enhancementHtml}
+
+                <!-- Region Detection -->
+                ${regionHtml}
+            </div>
+
+            <div>
+                <!-- Clinical Summary -->
+                <div class="detail-section">
+                    <h3>🏥 Clinical Summary
+                        ${summary ? `<span class="badge success" style="margin-left:0.5rem">AI Generated</span>` : ''}
+                        ${summary?.visionUsed ? `<span class="badge" style="margin-left:0.4rem;background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.3)">🔬 GPT-4o Vision</span><span style="font-size:0.7rem;color:var(--text-dim);margin-left:0.4rem">Pages: ${(summary.figurePages||[]).join(', ')}</span>` : ''}
+                        ${!summary && ocr ? `<button onclick="triggerSummarize('${docId}')" id="summarizeBtn" style="float:right;background:var(--accent);border:none;color:white;padding:0.3rem 0.8rem;border-radius:6px;cursor:pointer;font-size:0.75rem">✨ Summarize</button>` : ''}
+                    </h3>
+                    <div id="summaryContent">
+                        ${summary ? `<div class="summary-wrap" id="summaryWrap">
+                            <div class="ocr-text" dir="rtl" style="text-align:right">${summary.summaryHtml || renderMarkdown(summary.summary)}</div>
+                            <button class="summary-toggle" onclick="toggleSummary()">▼ Show more</button>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-dim);margin-top:0.5rem">Model: ${summary.model || '-'} | Tokens: ${summary.usage?.totalTokens || '-'} | ${summary.timestamp ? new Date(summary.timestamp).toLocaleString() : ''}</div>` : '<div style="color:var(--text-dim);font-size:0.85rem;padding:1rem 0">No summary yet. Click \"Summarize\" after OCR completes.</div>'}}
+                    </div>
+                </div>
+
+                <!-- OCR Confidence -->
+                ${confidenceHtml}
+
+                <!-- OCR Text -->
+                <div class="detail-section" ${confidenceHtml ? 'style="margin-top:1rem"' : 'style="margin-top:1rem"'}>
+                    <h3>📝 Extracted Text</h3>
+                    <div class="ocr-text" dir="auto">${escapeHtml(ocrContent)}</div>
+                </div>
+
+                <!-- Extracted Tables -->
+                ${renderOcrTables(ocr)}
+
+                <!-- Detected Figures -->
+                ${renderOcrFigures(ocr)}
+
+                <!-- Source Info -->
+                <div class="detail-section" style="margin-top:1rem">
+                    <h3>ℹ️ Source Info</h3>
+                    <table style="width:100%;font-size:0.85rem">
+                        <tr><td style="color:var(--text-dim);padding:0.3rem 0">Doc ID</td><td style="padding:0.3rem 0;word-break:break-all">${docId}</td></tr>
+                        <tr><td style="color:var(--text-dim);padding:0.3rem 0">Source</td><td style="padding:0.3rem 0">${pp.sourceBlobPath||'-'}</td></tr>
+                        <tr><td style="color:var(--text-dim);padding:0.3rem 0">Container</td><td style="padding:0.3rem 0">${pp.sourceContainer||'-'}</td></tr>
+                        <tr><td style="color:var(--text-dim);padding:0.3rem 0">Pages</td><td style="padding:0.3rem 0">${pages.length}</td></tr>
+                        <tr><td style="color:var(--text-dim);padding:0.3rem 0">Correlation</td><td style="padding:0.3rem 0;word-break:break-all">${pp.correlationId||'-'}</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Auto-configure summary toggle visibility
+    initSummaryToggle();
+}
+
+function switchPage(docId, pageNum, el) {
+    document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelector('#imagePreview img').src = apiUrl(`image/${docId}/${pageNum}`);
+    loadOriginalImage(docId, pageNum);
+}
+
+function loadOriginalImage(docId, pageNum) {
+    const container = document.getElementById('originalPreview');
+    if (!container) return;
+    container.innerHTML = '<div class="img-loading"><div class="spinner"></div>Loading original…</div>';
+    const img = new Image();
+    img.alt = 'Original page';
+    img.onload = () => { container.innerHTML = ''; container.appendChild(img); };
+    img.onerror = () => { container.innerHTML = '<div class="img-placeholder">Original image not available.<br>Upload a new file to see the before/after comparison.</div>'; };
+    img.src = apiUrl(`image-original/${docId}/${pageNum}`);
+}
+
+function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('active');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    return String(text).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderOcrTables(ocr) {
+    const tables = ocr?.analyzeResult?.tables;
+    if (!tables || tables.length === 0) return '';
+
+    let html = '<div class="detail-section" style="margin-top:1rem"><h3>📊 Extracted Tables <span class="badge success" style="margin-left:0.5rem">' + tables.length + ' table' + (tables.length > 1 ? 's' : '') + '</span></h3>';
+
+    tables.forEach((tbl, idx) => {
+        const rows = tbl.rowCount || 0;
+        const cols = tbl.columnCount || 0;
+        const cells = tbl.cells || [];
+
+        // Build grid
+        const grid = {};
+        cells.forEach(cell => {
+            const r = cell.rowIndex || 0;
+            const c = cell.columnIndex || 0;
+            grid[r + ',' + c] = cell.content || '';
+        });
+
+        html += '<div class="ocr-table-caption">📋 Table ' + (idx + 1) + ' (' + rows + ' rows × ' + cols + ' columns)</div>';
+        html += '<div class="ocr-table-container"><table>';
+
+        for (let r = 0; r < rows; r++) {
+            html += '<tr>';
+            const tag = r === 0 ? 'th' : 'td';
+            for (let c = 0; c < cols; c++) {
+                const val = grid[r + ',' + c] || '';
+                html += '<' + tag + ' dir="auto">' + escapeHtml(val) + '</' + tag + '>';
+            }
+            html += '</tr>';
+        }
+
+        html += '</table></div>';
+    });
+
+    html += '</div>';
+    return html;
+}
+
+function renderOcrFigures(ocr) {
+    const figures = ocr?.analyzeResult?.figures;
+    if (!figures || figures.length === 0) return '';
+
+    let html = '<div class="detail-section" style="margin-top:1rem"><h3>📈 Detected Figures <span class="badge" style="background:rgba(234,179,8,.15);color:var(--yellow);margin-left:0.5rem">' + figures.length + '</span></h3>';
+    html += '<div class="figure-list">';
+
+    figures.forEach((fig, idx) => {
+        const caption = fig.caption?.content || 'No caption detected';
+        html += '<div class="figure-item">' +
+            '<span class="figure-icon">📊</span>' +
+            '<div>' +
+                '<div style="font-weight:600;color:var(--text)">Figure ' + (idx + 1) + '</div>' +
+                '<div style="color:var(--text-dim);font-size:0.78rem" dir="auto">' + escapeHtml(caption) + '</div>' +
+            '</div>' +
+        '</div>';
+    });
+
+    html += '</div></div>';
+    return html;
+}
+
+function renderMarkdown(md) {
+    // Simple markdown→HTML for the summary output
+    let html = escapeHtml(md);
+    // Headers ## → <h4>, ### → <h5>
+    html = html.replace(/^### (.+)$/gm, '<h5 style="color:var(--accent);margin:1rem 0 0.3rem;font-size:0.85rem">$1</h5>');
+    html = html.replace(/^## (.+)$/gm, '<h4 style="color:var(--green);margin:1rem 0 0.5rem;font-size:1rem">$1</h4>');
+    // Bold **text**
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Data-source markers: 📋 table, 📊 chart/visual — use !important to override any parent styles
+    html = html.replace(/(📋\s*<strong>.*?<\/strong>)/g, '<div style="display:block !important;background:#1e3a5f !important;border-left:5px solid #3b82f6 !important;padding:8px 12px !important;margin:10px 0 4px !important;border-radius:6px !important"><span style="display:inline-block !important;background:#3b82f6 !important;color:#fff !important;padding:2px 8px !important;border-radius:4px !important;font-size:11px !important;font-weight:800 !important;margin-left:8px !important;letter-spacing:1px !important">TABLE</span> $1</div>');
+    html = html.replace(/(📊\s*<strong>.*?<\/strong>)/g, '<div style="display:block !important;background:#2d1b4e !important;border-left:5px solid #8b5cf6 !important;padding:8px 12px !important;margin:10px 0 4px !important;border-radius:6px !important"><span style="display:inline-block !important;background:#8b5cf6 !important;color:#fff !important;padding:2px 8px !important;border-radius:4px !important;font-size:11px !important;font-weight:800 !important;margin-left:8px !important;letter-spacing:1px !important">VISION</span> $1</div>');
+    // Bullet points
+    html = html.replace(/^- (.+)$/gm, '<div style="padding-left:1rem;margin:0.15rem 0">\u2022 $1</div>');
+    // Warning emoji lines
+    html = html.replace(/(⚠[^\n]*)/g, '<span style="color:var(--yellow);font-weight:600">$1</span>');
+    // Line breaks
+    html = html.replace(/\n/g, '<br>');
+    return html;
+}
+
+function toggleSummary() {
+    const wrap = document.getElementById('summaryWrap');
+    if (!wrap) return;
+    const btn = wrap.querySelector('.summary-toggle');
+    if (wrap.classList.contains('expanded')) {
+        wrap.classList.remove('expanded');
+        if (btn) btn.innerHTML = '▼ Show more';
+    } else {
+        wrap.classList.add('expanded');
+        if (btn) btn.innerHTML = '▲ Show less';
+    }
+}
+
+function initSummaryToggle() {
+    const wrap = document.getElementById('summaryWrap');
+    if (!wrap) return;
+    const textEl = wrap.querySelector('.ocr-text');
+    const btn = wrap.querySelector('.summary-toggle');
+    if (textEl && btn) {
+        const origMax = textEl.style.maxHeight;
+        textEl.style.maxHeight = 'none';
+        const natural = textEl.scrollHeight;
+        textEl.style.maxHeight = origMax || '';
+        if (natural <= 200) {
+            btn.style.display = 'none';
+            wrap.classList.add('expanded');
+        }
+    }
+}
+
+async function triggerSummarize(docId) {
+    const btn = document.getElementById('summarizeBtn');
+    const container = document.getElementById('summaryContent');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Summarizing…';
+    }
+    try {
+        const resp = await fetch(apiUrl('summarize'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ docId }),
+        });
+        const result = await resp.json();
+        if (!resp.ok) throw new Error(result.error || `HTTP ${resp.status}`);
+        container.innerHTML = `
+            <div class="summary-wrap" id="summaryWrap">
+                <div class="ocr-text" dir="rtl" style="text-align:right">${renderMarkdown(result.summary)}</div>
+                <button class="summary-toggle" onclick="toggleSummary()">▼ Show more</button>
+            </div>
+            <div style="font-size:0.7rem;color:var(--text-dim);margin-top:0.5rem">Model: ${result.model || '-'} | Tokens: ${result.usage?.totalTokens || '-'} | ${result.timestamp ? new Date(result.timestamp).toLocaleString() : ''}</div>
+        `;
+        initSummaryToggle();
+        if (btn) btn.remove();
+        showToast('success', 'Summary generated', `Clinical summary for ${docId} created successfully.`);
+    } catch (err) {
+        if (btn) { btn.disabled = false; btn.textContent = '✨ Summarize'; }
+        showToast('error', 'Summarization failed', err.message);
+    }
+}
+
+// ── File Upload ─────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+
+uploadZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+});
+uploadZone.addEventListener('dragleave', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+});
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleFileSelect(e.dataTransfer.files);
+});
+
+async function handleFileSelect(files) {
+    if (!files || !files.length) return;
+    const { base, key } = getConfig();
+    if (!base || !key) {
+        showToast('error', 'Not connected', 'Enter API URL and function key first.');
+        return;
+    }
+
+    const progress = document.getElementById('uploadProgress');
+    const bar = document.getElementById('progressBar');
+    const status = document.getElementById('uploadStatus');
+    progress.classList.add('active');
+
+    let successCount = 0;
+    let failCount = 0;
+    const uploadedBlobs = [];
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const pct = Math.round(((i) / files.length) * 100);
+        bar.style.width = pct + '%';
+        status.className = 'upload-status';
+        status.textContent = `Uploading ${file.name} (${i + 1}/${files.length})…`;
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file, file.name);
+
+            // Attach preprocessing settings
+            const settings = getSettingsFromUI();
+            formData.append('settings', JSON.stringify(settings));
+
+            const resp = await fetch(`${base}/upload?code=${encodeURIComponent(key)}`, {
+                method: 'POST',
+                body: formData,
+            });
+            const result = await resp.json();
+
+            if (!resp.ok) {
+                throw new Error(result.error || `HTTP ${resp.status}`);
+            }
+
+            successCount++;
+            uploadedBlobs.push({ name: file.name, blobPath: result.blobPath, startTime: Date.now() });
+            showToast('success', 'Upload successful', `${file.name} → raw/${result.blobPath} (${(result.sizeBytes / 1024).toFixed(0)} KB)`);
+        } catch (err) {
+            failCount++;
+            showToast('error', `Upload failed: ${file.name}`, err.message);
+        }
+    }
+
+    bar.style.width = '100%';
+    if (failCount === 0) {
+        status.className = 'upload-status success';
+        status.textContent = `✅ ${successCount} file(s) uploaded. Tracking pipeline…`;
+    } else {
+        status.className = 'upload-status error';
+        status.textContent = `⚠️ ${successCount} uploaded, ${failCount} failed.`;
+    }
+
+    // Reset file input
+    document.getElementById('fileInput').value = '';
+
+    // Start pipeline tracker for uploaded blobs
+    if (uploadedBlobs.length > 0) {
+        startPipelineTracker(uploadedBlobs);
+    }
+
+    // Hide upload progress bar after short delay
+    setTimeout(() => {
+        progress.classList.remove('active');
+        bar.style.width = '0%';
+    }, 3000);
+}
+
+// ── Pipeline Tracker ─────────────────────
+let trackerInterval = null;
+let trackedItems = [];   // { name, blobPath, startTime, docId, stage }
+
+function startPipelineTracker(blobs) {
+    const container = document.getElementById('pipelineTracker');
+    container.style.display = 'block';
+
+    // Add new items to tracked list
+    blobs.forEach(b => {
+        if (!trackedItems.find(t => t.blobPath === b.blobPath)) {
+            trackedItems.push({
+                name: b.name,
+                blobPath: b.blobPath,
+                startTime: b.startTime || Date.now(),
+                docId: null,
+                stage: 'uploaded',   // uploaded → preprocessing → ocr → summarized → done
+                error: null,
+            });
+        }
+    });
+
+    renderTracker();
+
+    // Start polling if not already running
+    if (!trackerInterval) {
+        trackerInterval = setInterval(pollPipelineStatus, 5000);
+    }
+}
+
+function renderTracker() {
+    const container = document.getElementById('pipelineTracker');
+    if (!trackedItems.length) {
+        container.style.display = 'none';
+        return;
+    }
+
+    const stages = ['uploaded', 'preprocessing', 'ocr', 'summarized'];
+    const stageLabels = ['Uploaded', 'Preprocessing', 'OCR', 'Summary'];
+    const stageIcons = ['📤', '⚙️', '🔍', '📝'];
+
+    const itemsHtml = trackedItems.map((item, idx) => {
+        const currentIdx = stages.indexOf(item.stage);
+        const isDone = item.stage === 'done' || item.stage === 'summarized';
+        const isError = !!item.error;
+        const elapsed = formatElapsed(Date.now() - item.startTime);
+
+        const stepsHtml = stages.map((s, si) => {
+            let cls = '';
+            if (isError && si === currentIdx) cls = 'error';
+            else if (si < currentIdx || (si === currentIdx && isDone)) cls = 'done';
+            else if (si === currentIdx) cls = 'active';
+
+            const dotContent = cls === 'done' ? '✓' : cls === 'error' ? '✗' : stageIcons[si];
+
+            return `<div class="tracker-step ${cls}">
+                <div class="step-connector"></div>
+                <div class="step-dot">${dotContent}</div>
+                <div class="step-label">${stageLabels[si]}</div>
+            </div>`;
+        }).join('');
+
+        let detail = '';
+        if (isError) {
+            detail = `<div class="tracker-item-detail" style="color:var(--red)">❌ ${item.error}</div>`;
+        } else if (isDone) {
+            detail = `<div class="tracker-item-detail" style="color:var(--green)">✅ Pipeline complete — ${elapsed}</div>`;
+        } else if (item.stage === 'uploaded') {
+            detail = `<div class="tracker-item-detail">⏳ Waiting for Logic App trigger… ${elapsed}</div>`;
+        } else if (item.stage === 'preprocessing') {
+            detail = `<div class="tracker-item-detail">⏳ Preprocessing image… ${elapsed}</div>`;
+        } else if (item.stage === 'ocr') {
+            detail = `<div class="tracker-item-detail">⏳ Running OCR… ${elapsed}</div>`;
+        }
+
+        const fileIcon = item.name.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️';
+        const itemClass = isDone ? 'tracker-item completed' : 'tracker-item';
+
+        return `<div class="${itemClass}" id="trackerItem${idx}">
+            <div class="tracker-item-header">
+                <div class="tracker-item-name"><span class="file-icon">${fileIcon}</span>${item.name}</div>
+                <div class="tracker-item-time">${elapsed}</div>
+            </div>
+            <div class="tracker-steps">${stepsHtml}</div>
+            ${detail}
+        </div>`;
+    }).join('');
+
+    const allDone = trackedItems.every(t => t.stage === 'done' || t.stage === 'summarized' || t.error);
+
+    container.innerHTML = `<div class="pipeline-tracker">
+        <div class="tracker-header">
+            <h3>🔄 Pipeline Progress</h3>
+            <div class="tracker-actions">
+                ${allDone ? '<button onclick="clearTracker()" title="Dismiss">✓ Done</button>' : '<span style="font-size:0.75rem;color:var(--text-dim)">polling every 5s</span>'}
+                <button onclick="clearTracker()" title="Close">✕</button>
+            </div>
+        </div>
+        <div class="tracker-body">${itemsHtml}</div>
+    </div>`;
+}
+
+async function pollPipelineStatus() {
+    // Only poll if we have active items
+    const active = trackedItems.filter(t => t.stage !== 'done' && t.stage !== 'summarized' && !t.error);
+    if (!active.length) {
+        clearInterval(trackerInterval);
+        trackerInterval = null;
+        renderTracker();
+        loadDocuments();
+        return;
+    }
+
+    try {
+        const resp = await fetch(apiUrl('documents'));
+        if (!resp.ok) return;
+        const docs = await resp.json();
+
+        for (const item of trackedItems) {
+            if (item.stage === 'done' || item.stage === 'summarized' || item.error) continue;
+
+            // Find matching document by sourceBlobPath
+            const doc = docs.find(d => d.sourceBlobPath === item.blobPath);
+            if (!doc) {
+                // Not yet picked up by Logic App
+                item.stage = 'uploaded';
+                continue;
+            }
+
+            item.docId = doc.docId;
+
+            if (doc.failure) {
+                item.error = doc.failure.message || doc.failure.failureCode || 'Processing failed';
+                item.stage = 'preprocessing';
+            } else if (doc.summaryCompleted) {
+                item.stage = 'summarized';
+            } else if (doc.ocrCompleted) {
+                item.stage = 'ocr';
+            } else {
+                item.stage = 'preprocessing';
+            }
+        }
+    } catch (e) {
+        // Silently retry on next poll
+    }
+
+    renderTracker();
+}
+
+function formatElapsed(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    if (min === 0) return `${sec}s`;
+    return `${min}m ${sec.toString().padStart(2, '0')}s`;
+}
+
+function clearTracker() {
+    if (trackerInterval) {
+        clearInterval(trackerInterval);
+        trackerInterval = null;
+    }
+    trackedItems = [];
+    const container = document.getElementById('pipelineTracker');
+    container.style.display = 'none';
+    container.innerHTML = '';
+    loadDocuments();
+}
+
+// ── Keyboard ────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+});
+
+// ── Preprocessing Settings ───────────────
+const DEFAULT_SETTINGS = {
+    enableAutocrop: true,
+    enableDenoise: true,
+    enableDeskew: true,
+    enableUpscale: true,
+    enableBrightnessFix: true,
+    enableContrastFix: true,
+    aggressive: false,
+    denoiseH: 3,
+    claheClip: 1.5,
+    autocropMargin: 10,
+    forceThreshold: false,
+    forceUpscale: false,
+    darkThreshold: 140,
+    noiseThreshold: 8,
+    contrastThreshold: 50,
+    skewMinAngle: 0.5,
+    skewMaxAngle: 15,
+    upscaleBelow: 2400,
+};
+
+function toggleSettings() {
+    document.getElementById('settingsPanel').classList.toggle('open');
+}
+
+function updateRangeDisplay(el) {
+    const valEl = document.getElementById(el.id + '_val');
+    if (valEl) {
+        let suffix = '';
+        if (el.id === 'sSkewMin' || el.id === 'sSkewMax') suffix = '°';
+        valEl.textContent = el.value + suffix;
+    }
+}
+
+function getSettingsFromUI() {
+    return {
+        enableAutocrop: document.getElementById('sEnableAutocrop').checked,
+        enableDenoise: document.getElementById('sEnableDenoise').checked,
+        enableDeskew: document.getElementById('sEnableDeskew').checked,
+        enableUpscale: document.getElementById('sEnableUpscale').checked,
+        enableBrightnessFix: document.getElementById('sEnableBrightness').checked,
+        enableContrastFix: document.getElementById('sEnableContrast').checked,
+        aggressive: document.getElementById('sAggressive').checked,
+        denoiseH: parseInt(document.getElementById('sDenoiseH').value),
+        claheClip: parseFloat(document.getElementById('sClaheClip').value),
+        autocropMargin: parseInt(document.getElementById('sAutocropMargin').value),
+        forceThreshold: document.getElementById('sForceThreshold').checked,
+        forceUpscale: document.getElementById('sForceUpscale').checked,
+        darkThreshold: parseFloat(document.getElementById('sDarkThreshold').value),
+        noiseThreshold: parseFloat(document.getElementById('sNoiseThreshold').value),
+        contrastThreshold: parseFloat(document.getElementById('sContrastThreshold').value),
+        skewMinAngle: parseFloat(document.getElementById('sSkewMin').value),
+        skewMaxAngle: parseFloat(document.getElementById('sSkewMax').value),
+        upscaleBelow: parseInt(document.getElementById('sUpscaleBelow').value),
+    };
+}
+
+function applySettingsToUI(s) {
+    document.getElementById('sEnableAutocrop').checked = s.enableAutocrop;
+    document.getElementById('sEnableDenoise').checked = s.enableDenoise;
+    document.getElementById('sEnableDeskew').checked = s.enableDeskew;
+    document.getElementById('sEnableUpscale').checked = s.enableUpscale;
+    document.getElementById('sEnableBrightness').checked = s.enableBrightnessFix;
+    document.getElementById('sEnableContrast').checked = s.enableContrastFix;
+    document.getElementById('sAggressive').checked = s.aggressive;
+    document.getElementById('sDenoiseH').value = s.denoiseH;
+    document.getElementById('sClaheClip').value = s.claheClip;
+    document.getElementById('sAutocropMargin').value = s.autocropMargin;
+    document.getElementById('sForceThreshold').checked = s.forceThreshold;
+    document.getElementById('sForceUpscale').checked = s.forceUpscale;
+    document.getElementById('sDarkThreshold').value = s.darkThreshold;
+    document.getElementById('sNoiseThreshold').value = s.noiseThreshold;
+    document.getElementById('sContrastThreshold').value = s.contrastThreshold;
+    document.getElementById('sSkewMin').value = s.skewMinAngle;
+    document.getElementById('sSkewMax').value = s.skewMaxAngle;
+    document.getElementById('sUpscaleBelow').value = s.upscaleBelow;
+    // Update range display values
+    ['sDenoiseH','sClaheClip','sAutocropMargin','sDarkThreshold','sNoiseThreshold',
+     'sContrastThreshold','sSkewMin','sSkewMax','sUpscaleBelow'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) updateRangeDisplay(el);
+    });
+}
+
+function saveSettings() {
+    const s = getSettingsFromUI();
+    localStorage.setItem('preocr_settings', JSON.stringify(s));
+    showToast('success', 'Settings saved', 'Preprocessing settings will be applied to new uploads.');
+}
+
+function loadSettings() {
+    const saved = localStorage.getItem('preocr_settings');
+    const s = saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_SETTINGS };
+    applySettingsToUI(s);
+}
+
+function resetSettings() {
+    applySettingsToUI(DEFAULT_SETTINGS);
+    localStorage.removeItem('preocr_settings');
+    showToast('success', 'Settings reset', 'All preprocessing settings restored to defaults.');
+}
+
+// ── Floating Tooltips ────────────────────
+let activeTip = null;
+document.addEventListener('mouseover', e => {
+    const row = e.target.closest('.setting-row[data-tip]');
+    if (!row) return;
+    if (activeTip) { activeTip.remove(); activeTip = null; }
+    const tip = document.createElement('div');
+    tip.className = 'floating-tip';
+    tip.textContent = row.getAttribute('data-tip');
+    document.body.appendChild(tip);
+    const rect = row.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.top - tipRect.height - 12;
+    // If would go off-screen top, show below
+    if (top < 4) {
+        top = rect.bottom + 8;
+    }
+    // Keep within viewport horizontally
+    if (left + tipRect.width > window.innerWidth - 8) {
+        left = window.innerWidth - tipRect.width - 8;
+    }
+    tip.style.left = Math.max(4, left) + 'px';
+    tip.style.top = top + 'px';
+    activeTip = tip;
+});
+document.addEventListener('mouseout', e => {
+    const row = e.target.closest('.setting-row[data-tip]');
+    if (row && activeTip) {
+        activeTip.remove();
+        activeTip = null;
+    }
+});
+
+// ── Init ────────────────────────────────
+loadConfig();
+loadSettings();
+</script>
+
+</body>
+</html>

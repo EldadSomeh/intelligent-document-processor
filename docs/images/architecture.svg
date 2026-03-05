@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="Segoe UI, Arial, sans-serif" font-size="13">
+  <defs>
+    <linearGradient id="azureGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078d4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00bcf2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#107c10;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#5db85d;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="520" rx="12" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="450" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#1e293b">Intelligent Document Processor — Architecture</text>
+
+  <!-- VNet boundary -->
+  <rect x="140" y="55" width="740" height="280" rx="10" fill="none" stroke="#0078d4" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="155" y="75" font-size="12" fill="#0078d4" font-weight="600">Azure Virtual Network</text>
+
+  <!-- Internet User -->
+  <rect x="10" y="140" width="110" height="60" rx="8" fill="#334155" filter="url(#shadow)"/>
+  <text x="65" y="167" text-anchor="middle" fill="white" font-weight="600" font-size="12">🌐 Internet</text>
+  <text x="65" y="185" text-anchor="middle" fill="#94a3b8" font-size="10">HTTPS only</text>
+
+  <!-- Arrow: Internet → App Gateway -->
+  <line x1="120" y1="170" x2="170" y2="170" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGrey)"/>
+
+  <!-- Application Gateway -->
+  <rect x="175" y="110" width="160" height="120" rx="8" fill="url(#azureGrad)" filter="url(#shadow)"/>
+  <text x="255" y="138" text-anchor="middle" fill="white" font-weight="700" font-size="13">Application Gateway</text>
+  <text x="255" y="158" text-anchor="middle" fill="#e0f2fe" font-size="10">TLS termination</text>
+  <text x="255" y="173" text-anchor="middle" fill="#e0f2fe" font-size="10">HTTP → HTTPS redirect</text>
+  <text x="255" y="188" text-anchor="middle" fill="#e0f2fe" font-size="10">Auto-injects func key</text>
+  <text x="255" y="203" text-anchor="middle" fill="#e0f2fe" font-size="10">URL rewrite (/ → /api/ui)</text>
+  <text x="255" y="220" text-anchor="middle" fill="#bae6fd" font-size="9">snet-appgw</text>
+
+  <!-- Arrow: AppGW → Function App -->
+  <line x1="335" y1="170" x2="400" y2="170" stroke="#0078d4" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text x="367" y="160" text-anchor="middle" fill="#0078d4" font-size="9">Private</text>
+  <text x="367" y="170" text-anchor="middle" fill="#0078d4" font-size="9">Endpoint</text>
+
+  <!-- Function App -->
+  <rect x="405" y="85" width="200" height="175" rx="8" fill="url(#greenGrad)" filter="url(#shadow)"/>
+  <text x="505" y="110" text-anchor="middle" fill="white" font-weight="700" font-size="14">⚡ Function App</text>
+  <text x="505" y="128" text-anchor="middle" fill="#dcfce7" font-size="10">Python 3.11 · Docker</text>
+  <line x1="420" y1="136" x2="590" y2="136" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+  <text x="505" y="153" text-anchor="middle" fill="#f0fdf4" font-size="11">📄 Preprocessing Engine</text>
+  <text x="505" y="170" text-anchor="middle" fill="#f0fdf4" font-size="11">🔍 OCR Gateway</text>
+  <text x="505" y="187" text-anchor="middle" fill="#f0fdf4" font-size="11">🤖 AI Summarization</text>
+  <text x="505" y="204" text-anchor="middle" fill="#f0fdf4" font-size="11">🔄 Durable Orchestrator</text>
+  <text x="505" y="221" text-anchor="middle" fill="#f0fdf4" font-size="11">🖥️ Dashboard UI</text>
+  <text x="505" y="250" text-anchor="middle" fill="#bbf7d0" font-size="9">snet-integration</text>
+
+  <!-- Azure Services Row -->
+  <!-- Blob Storage -->
+  <rect x="160" y="370" width="140" height="65" rx="8" fill="#0078d4" filter="url(#shadow)"/>
+  <text x="230" y="398" text-anchor="middle" fill="white" font-weight="600" font-size="12">💾 Blob Storage</text>
+  <text x="230" y="418" text-anchor="middle" fill="#bae6fd" font-size="10">raw · artifacts · outputs</text>
+
+  <!-- Table Storage -->
+  <rect x="320" y="370" width="140" height="65" rx="8" fill="#0078d4" filter="url(#shadow)"/>
+  <text x="390" y="398" text-anchor="middle" fill="white" font-weight="600" font-size="12">📊 Table Storage</text>
+  <text x="390" y="418" text-anchor="middle" fill="#bae6fd" font-size="10">Durable Task state</text>
+
+  <!-- Doc Intelligence -->
+  <rect x="480" y="370" width="140" height="65" rx="8" fill="#0078d4" filter="url(#shadow)"/>
+  <text x="550" y="393" text-anchor="middle" fill="white" font-weight="600" font-size="12">📝 Document</text>
+  <text x="550" y="408" text-anchor="middle" fill="white" font-weight="600" font-size="12">Intelligence</text>
+  <text x="550" y="425" text-anchor="middle" fill="#bae6fd" font-size="10">OCR extraction</text>
+
+  <!-- Azure OpenAI -->
+  <rect x="640" y="370" width="140" height="65" rx="8" fill="#0078d4" filter="url(#shadow)"/>
+  <text x="710" y="398" text-anchor="middle" fill="white" font-weight="600" font-size="12">🧠 Azure OpenAI</text>
+  <text x="710" y="418" text-anchor="middle" fill="#bae6fd" font-size="10">GPT-4o · Embeddings</text>
+
+  <!-- App Insights -->
+  <rect x="680" y="110" width="170" height="55" rx="8" fill="#5c2d91" filter="url(#shadow)"/>
+  <text x="765" y="135" text-anchor="middle" fill="white" font-weight="600" font-size="12">📈 App Insights</text>
+  <text x="765" y="153" text-anchor="middle" fill="#ddd6fe" font-size="10">Monitoring & diagnostics</text>
+
+  <!-- ACR -->
+  <rect x="680" y="185" width="170" height="55" rx="8" fill="#5c2d91" filter="url(#shadow)"/>
+  <text x="765" y="210" text-anchor="middle" fill="white" font-weight="600" font-size="12">📦 Container Registry</text>
+  <text x="765" y="228" text-anchor="middle" fill="#ddd6fe" font-size="10">Docker images</text>
+
+  <!-- Arrows: Function App → services -->
+  <line x1="460" y1="260" x2="230" y2="370" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="490" y1="260" x2="390" y2="370" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="520" y1="260" x2="550" y2="370" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="550" y1="260" x2="710" y2="370" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Arrow: Function App → AppInsights -->
+  <line x1="605" y1="137" x2="680" y2="137" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <!-- Arrow: ACR → Function App -->
+  <line x1="680" y1="212" x2="605" y2="195" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Pipeline flow at bottom -->
+  <rect x="100" y="465" width="700" height="40" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="140" y="490" fill="#0078d4" font-weight="700" font-size="12">Pipeline:</text>
+  <text x="210" y="490" fill="#334155" font-size="12">Upload → Preprocess → OCR → Summarize</text>
+  <text x="498" y="490" fill="#64748b" font-size="11">| Durable Functions orchestration with retry policies</text>
+
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrowGrey" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#0078d4"/>
+    </marker>
+  </defs>
+</svg>
