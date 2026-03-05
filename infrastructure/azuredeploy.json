@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "9089770182506193267"
+      "templateHash": "14029268908905310605"
     }
   },
   "parameters": {
@@ -51,11 +51,11 @@
         "description": "Docker image tag."
       }
     },
-    "docIntelEndpoint": {
+    "sourceRepoUrl": {
       "type": "string",
-      "defaultValue": "https://PLACEHOLDER.cognitiveservices.azure.com/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-11-30",
+      "defaultValue": "https://github.com/EldadSomeh/intelligent-document-processor.git#main:function-app",
       "metadata": {
-        "description": "Azure AI Document Intelligence endpoint URL (optional, used by Logic App)."
+        "description": "GitHub repo URL for ACR build (includes Dockerfile)."
       }
     },
     "existingVnetId": {
@@ -76,7 +76,7 @@
       "type": "string",
       "defaultValue": "10.0.1.0/24",
       "metadata": {
-        "description": "Subnet for VNet-integrated apps (Function App + Logic App)."
+        "description": "Subnet for VNet-integrated apps (Function App)."
       }
     },
     "privateEndpointSubnetPrefix": {
@@ -107,13 +107,6 @@
         "description": "App Service Plan tier for the Function App."
       }
     },
-    "logicPlanSku": {
-      "type": "string",
-      "defaultValue": "WS1",
-      "metadata": {
-        "description": "App Service Plan SKU for the Logic App (WS1, WS2, WS3)."
-      }
-    },
     "functionHostKey": {
       "type": "securestring",
       "defaultValue": "",
@@ -129,8 +122,8 @@
     "appInsightsName": "[format('{0}-{1}-ai-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
     "funcPlanName": "[format('{0}-{1}-func-plan', parameters('projectName'), parameters('env'))]",
     "funcAppName": "[format('{0}-{1}-func-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
-    "logicPlanName": "[format('{0}-{1}-logic-plan', parameters('projectName'), parameters('env'))]",
-    "logicAppName": "[format('{0}-{1}-logic-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
+    "buildScriptName": "[format('{0}-{1}-build-image', parameters('projectName'), parameters('env'))]",
+    "buildIdentityName": "[format('{0}-{1}-build-id', parameters('projectName'), parameters('env'))]",
     "vnetName": "[format('{0}-{1}-vnet-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
     "integrationSubnetName": "snet-integration",
     "peSubnetName": "snet-private-endpoints",
@@ -467,112 +460,6 @@
       ]
     },
     {
-      "type": "Microsoft.Web/serverfarms",
-      "apiVersion": "2023-12-01",
-      "name": "[variables('logicPlanName')]",
-      "location": "[parameters('location')]",
-      "sku": {
-        "name": "[parameters('logicPlanSku')]",
-        "tier": "WorkflowStandard"
-      },
-      "kind": "elastic",
-      "properties": {}
-    },
-    {
-      "type": "Microsoft.Web/sites",
-      "apiVersion": "2023-12-01",
-      "name": "[variables('logicAppName')]",
-      "location": "[parameters('location')]",
-      "kind": "functionapp,workflowapp",
-      "identity": {
-        "type": "SystemAssigned"
-      },
-      "properties": {
-        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('logicPlanName'))]",
-        "virtualNetworkSubnetId": "[variables('integrationSubnetId')]",
-        "vnetRouteAllEnabled": true,
-        "siteConfig": {
-          "appSettings": [
-            {
-              "name": "AzureWebJobsStorage__accountName",
-              "value": "[variables('storageAccountName')]"
-            },
-            {
-              "name": "AzureWebJobsStorage__blobServiceUri",
-              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob]"
-            },
-            {
-              "name": "AzureWebJobsStorage__queueServiceUri",
-              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.queue]"
-            },
-            {
-              "name": "AzureWebJobsStorage__tableServiceUri",
-              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.table]"
-            },
-            {
-              "name": "AzureWebJobsStorage__credential",
-              "value": "managedidentity"
-            },
-            {
-              "name": "FUNCTIONS_EXTENSION_VERSION",
-              "value": "~4"
-            },
-            {
-              "name": "FUNCTIONS_WORKER_RUNTIME",
-              "value": "dotnet"
-            },
-            {
-              "name": "WEBSITE_NODE_DEFAULT_VERSION",
-              "value": "~18"
-            },
-            {
-              "name": "APP_KIND",
-              "value": "workflowApp"
-            },
-            {
-              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').InstrumentationKey]"
-            },
-            {
-              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
-            },
-            {
-              "name": "STORAGE_ACCOUNT_URL",
-              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob]"
-            },
-            {
-              "name": "PREPROCESS_FUNCTION_URL",
-              "value": "[format('https://{0}/api/preprocess', reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName)]"
-            },
-            {
-              "name": "DOC_INTEL_ENDPOINT",
-              "value": "[parameters('docIntelEndpoint')]"
-            },
-            {
-              "name": "AzureBlob__blobServiceUri",
-              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob]"
-            },
-            {
-              "name": "WEBSITE_VNET_ROUTE_ALL",
-              "value": "1"
-            },
-            {
-              "name": "WEBSITE_DNS_SERVER",
-              "value": "168.63.129.16"
-            }
-          ]
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
-        "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]",
-        "[resourceId('Microsoft.Web/serverfarms', variables('logicPlanName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
-        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
-      ]
-    },
-    {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
@@ -614,51 +501,6 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ]
-    },
-    {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
-      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), resourceId('Microsoft.Web/sites', variables('logicAppName')), variables('storageBlobDataOwner'))]",
-      "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataOwner'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('logicAppName')), '2023-12-01', 'full').identity.principalId]",
-        "principalType": "ServicePrincipal"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('logicAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ]
-    },
-    {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
-      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), resourceId('Microsoft.Web/sites', variables('logicAppName')), variables('storageQueueDataContributor'))]",
-      "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageQueueDataContributor'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('logicAppName')), '2023-12-01', 'full').identity.principalId]",
-        "principalType": "ServicePrincipal"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('logicAppName'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ]
-    },
-    {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
-      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), resourceId('Microsoft.Web/sites', variables('logicAppName')), variables('storageTableDataContributor'))]",
-      "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributor'))]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('logicAppName')), '2023-12-01', 'full').identity.principalId]",
-        "principalType": "ServicePrincipal"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('logicAppName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
       ]
     },
@@ -801,6 +643,92 @@
         "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]",
         "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
       ]
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[variables('buildIdentityName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')), '8311e382-0749-4cb8-b61a-304f252e45ec')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8311e382-0749-4cb8-b61a-304f252e45ec')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')), 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[variables('buildScriptName')]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.63.0",
+        "timeout": "PT30M",
+        "retentionInterval": "P1D",
+        "environmentVariables": [
+          {
+            "name": "ACR_NAME",
+            "value": "[variables('acrName')]"
+          },
+          {
+            "name": "IMAGE_NAME",
+            "value": "[parameters('imageName')]"
+          },
+          {
+            "name": "IMAGE_TAG",
+            "value": "[parameters('imageTag')]"
+          },
+          {
+            "name": "SOURCE_REPO",
+            "value": "[parameters('sourceRepoUrl')]"
+          },
+          {
+            "name": "RG_NAME",
+            "value": "[resourceGroup().name]"
+          },
+          {
+            "name": "FUNC_APP_NAME",
+            "value": "[variables('funcAppName')]"
+          }
+        ],
+        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Done!\"\r\n    "
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')), '8311e382-0749-4cb8-b61a-304f252e45ec'))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')), 'b24988ac-6180-42a0-ab88-20f7382dd24c'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName'))]",
+        "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]"
+      ]
     }
   ],
   "outputs": {
@@ -819,10 +747,6 @@
     "functionAppHostname": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName]"
-    },
-    "logicAppHostname": {
-      "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', variables('logicAppName')), '2023-12-01').defaultHostName]"
     },
     "appGwPublicFqdn": {
       "type": "string",

@@ -1,21 +1,18 @@
 // ============================================================================
-// Pre-OCR Preprocessing – Infrastructure (Bicep)
+// Intelligent Document Processor – Infrastructure (Bicep)
 //
 // Deploys:
-//   • Storage Account (no public access, no shared keys)
-//     with containers: raw, artifacts, outputs
-//   • Private Endpoints for blob, queue, table, file
-//   • Private DNS Zones for all four sub-resources
-//   • Azure Container Registry (for the Function App Docker image)
-//   • App Service Plan (Linux, B1) for the Function App
-//   • Azure Function App (Docker container, Python 3.11)
-//   • App Service Plan (WorkflowStandard WS1) for the Logic App
-//   • Logic App Standard
+//   • Storage Account (no public access) with containers: raw, artifacts, outputs
+//   • Private Endpoints + DNS Zones for blob, queue, table, file
+//   • Azure Container Registry (Docker image store)
+//   • App Service Plan (Linux) + Function App (Docker, Python 3.11)
+//   • Durable Functions orchestration (blob trigger → preprocess → OCR → summarize)
 //   • Application Insights
 //   • VNet with integration, private-endpoint, and appgw subnets
 //   • Application Gateway v2 (public entry point, injects func key)
+//   • User-Assigned Identity + Deployment Script to auto-build Docker image
 //   • Role assignments: Blob Data Owner, Queue Data Contributor,
-//     Table Data Contributor for both managed identities
+//     Table Data Contributor for the Function App managed identity
 // ============================================================================
 
 // ── Parameters ──────────────────────────────────────────────────────────────
@@ -38,8 +35,8 @@ param imageName string = 'preocr-func'
 @description('Docker image tag.')
 param imageTag string = 'latest'
 
-@description('Azure AI Document Intelligence endpoint URL (optional, used by Logic App).')
-param docIntelEndpoint string = 'https://PLACEHOLDER.cognitiveservices.azure.com/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-11-30'
+@description('GitHub repo URL for ACR build (includes Dockerfile).')
+param sourceRepoUrl string = 'https://github.com/EldadSomeh/intelligent-document-processor.git#main:function-app'
 
 @description('Optional: existing VNet resource ID. Leave empty to create a new VNet.')
 param existingVnetId string = ''
@@ -47,7 +44,7 @@ param existingVnetId string = ''
 @description('VNet address space (used only when creating a new VNet).')
 param vnetAddressPrefix string = '10.0.0.0/16'
 
-@description('Subnet for VNet-integrated apps (Function App + Logic App).')
+@description('Subnet for VNet-integrated apps (Function App).')
 param integrationSubnetPrefix string = '10.0.1.0/24'
 
 @description('Subnet for private endpoints.')
@@ -62,9 +59,6 @@ param funcPlanSku string = 'B1'
 @description('App Service Plan tier for the Function App.')
 param funcPlanTier string = 'Basic'
 
-@description('App Service Plan SKU for the Logic App (WS1, WS2, WS3).')
-param logicPlanSku string = 'WS1'
-
 @secure()
 @description('Function App host key – injected by AG as x-functions-key header.')
 param functionHostKey string = ''
@@ -77,8 +71,8 @@ var acrName               = '${projectName}${env}${suffix}'
 var appInsightsName       = '${projectName}-${env}-ai-${suffix}'
 var funcPlanName          = '${projectName}-${env}-func-plan'
 var funcAppName           = '${projectName}-${env}-func-${suffix}'
-var logicPlanName         = '${projectName}-${env}-logic-plan'
-var logicAppName          = '${projectName}-${env}-logic-${suffix}'
+var buildScriptName       = '${projectName}-${env}-build-image'
+var buildIdentityName     = '${projectName}-${env}-build-id'
 var vnetName              = '${projectName}-${env}-vnet-${suffix}'
 var integrationSubnetName = 'snet-integration'
 var peSubnetName          = 'snet-private-endpoints'
@@ -103,7 +97,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true             // Required for Logic App connection string auth
+    allowSharedKeyAccess: true             // Required for Durable Functions internal storage
     publicNetworkAccess: 'Disabled'        // ← survives Azure Policy
     networkAcls: {
       defaultAction: 'Deny'
@@ -301,56 +295,11 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// ── Logic App Standard ──────────────────────────────────────────────────────
-
-resource logicPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: logicPlanName
-  location: location
-  sku: { name: logicPlanSku, tier: 'WorkflowStandard' }
-  kind: 'elastic'
-  properties: {}
-}
-
-resource logicApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: logicAppName
-  location: location
-  kind: 'functionapp,workflowapp'
-  identity: { type: 'SystemAssigned' }
-  properties: {
-    serverFarmId: logicPlan.id
-    virtualNetworkSubnetId: integrationSubnetId
-    vnetRouteAllEnabled: true
-    siteConfig: {
-      appSettings: [
-        // Identity-based AzureWebJobsStorage (no keys!)
-        { name: 'AzureWebJobsStorage__accountName',     value: storageAccount.name }
-        { name: 'AzureWebJobsStorage__blobServiceUri',  value: storageAccount.properties.primaryEndpoints.blob }
-        { name: 'AzureWebJobsStorage__queueServiceUri', value: storageAccount.properties.primaryEndpoints.queue }
-        { name: 'AzureWebJobsStorage__tableServiceUri', value: storageAccount.properties.primaryEndpoints.table }
-        { name: 'AzureWebJobsStorage__credential',      value: 'managedidentity' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION',    value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME',       value: 'dotnet' }
-        { name: 'WEBSITE_NODE_DEFAULT_VERSION',   value: '~18' }
-        { name: 'APP_KIND',                       value: 'workflowApp' }
-        { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
-        { name: 'STORAGE_ACCOUNT_URL',            value: storageAccount.properties.primaryEndpoints.blob }
-        { name: 'PREPROCESS_FUNCTION_URL',        value: 'https://${funcApp.properties.defaultHostName}/api/preprocess' }
-        { name: 'DOC_INTEL_ENDPOINT',             value: docIntelEndpoint }
-        // Blob connector – managed-identity endpoint (used by connections.json)
-        { name: 'AzureBlob__blobServiceUri',      value: storageAccount.properties.primaryEndpoints.blob }
-        { name: 'WEBSITE_VNET_ROUTE_ALL',         value: '1' }
-        { name: 'WEBSITE_DNS_SERVER',             value: '168.63.129.16' }
-      ]
-    }
-  }
-}
-
 // ── Role Assignments ────────────────────────────────────────────────────────
-// Both Function App and Logic App need:
+// Function App needs:
 //   • Storage Blob Data Owner        – runtime manages lease blobs
 //   • Storage Queue Data Contributor – runtime uses internal queues
-//   • Storage Table Data Contributor – runtime uses internal tables
+//   • Storage Table Data Contributor – Durable Functions uses tables
 // These are required when using identity-based AzureWebJobsStorage.
 
 // -- Function App roles --
@@ -380,37 +329,6 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageTableDataContributor)
     principalId: funcApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// -- Logic App roles --
-resource logicBlobRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, logicApp.id, storageBlobDataOwner)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwner)
-    principalId: logicApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource logicQueueRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, logicApp.id, storageQueueDataContributor)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageQueueDataContributor)
-    principalId: logicApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource logicTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, logicApp.id, storageTableDataContributor)
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageTableDataContributor)
-    principalId: logicApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -535,11 +453,85 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
   }
 }
 
+// ── Managed Identity for Deployment Script ──────────────────────────────────
+// A user-assigned identity that has AcrPush + Contributor rights so the
+// deploymentScript can run `az acr build` and restart the Function App.
+
+resource buildIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: buildIdentityName
+  location: location
+}
+
+// AcrPush (8311e382-...) on the container registry
+resource buildAcrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.id, buildIdentity.id, '8311e382-0749-4cb8-b61a-304f252e45ec')
+  scope: acr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8311e382-0749-4cb8-b61a-304f252e45ec')
+    principalId: buildIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Contributor on the resource group so the script can restart the Function App
+resource buildContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, buildIdentity.id, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: buildIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ── Deployment Script: Build Docker Image & Deploy ──────────────────────────
+// Clones the GitHub repo, builds the Docker image in ACR, then restarts the
+// Function App so it pulls the new image.
+
+resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: buildScriptName
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${buildIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT30M'
+    retentionInterval: 'P1D'
+    environmentVariables: [
+      { name: 'ACR_NAME',       value: acr.name }
+      { name: 'IMAGE_NAME',     value: imageName }
+      { name: 'IMAGE_TAG',      value: imageTag }
+      { name: 'SOURCE_REPO',    value: sourceRepoUrl }
+      { name: 'RG_NAME',        value: resourceGroup().name }
+      { name: 'FUNC_APP_NAME',  value: funcApp.name }
+    ]
+    scriptContent: '''
+      echo "Building Docker image in ACR..."
+      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {
+        echo "ACR build failed, retrying..."
+        sleep 10
+        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1
+      }
+      echo "Restarting Function App to pull new image..."
+      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1
+      echo "Done!"
+    '''
+  }
+  dependsOn: [
+    buildAcrPush
+    buildContributor
+    funcApp
+  ]
+}
+
 // ── Outputs ─────────────────────────────────────────────────────────────────
 
 output storageAccountName    string = storageAccount.name
 output storageAccountBlobUrl string = storageAccount.properties.primaryEndpoints.blob
 output acrLoginServer        string = acr.properties.loginServer
 output functionAppHostname   string = funcApp.properties.defaultHostName
-output logicAppHostname      string = logicApp.properties.defaultHostName
 output appGwPublicFqdn       string = appGwPip.properties.dnsSettings.fqdn

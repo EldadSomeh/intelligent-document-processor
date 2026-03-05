@@ -72,7 +72,6 @@ Internet (HTTPS)
 | **Application Gateway** | Azure App GW v2 (Standard_v2) | Public entry point — TLS, HTTP→HTTPS, injects function key header |
 | **Orchestrator** | Azure Durable Functions (Python) | Blob trigger → preprocess → OCR → summarize with retry policies |
 | **Preprocessing** | Azure Function App (Python 3.11, Docker) | Image enhancement + API + UI |
-| **OCR** | Azure Document Intelligence | `prebuilt-layout` model for text and table extraction |
 | **Summarization** | Azure OpenAI (gpt-4o-mini) | Structured summary generation with few-shot examples |
 | **Embeddings** | Azure OpenAI (text-embedding-3-small) | Semantic similarity for example re-ranking |
 | **Storage** | Azure Blob + Table Storage | Documents, artifacts, outputs, orchestration state |
@@ -162,7 +161,7 @@ File uploaded to "raw" container
 
 | Service | SKU | Purpose |
 |---------|-----|---------|
-| Azure Functions | B1 (Linux) | Runs the processing pipeline |
+| Azure Functions | B1 (Linux, Docker) | Runs the entire pipeline (preprocessing, OCR, summarization, orchestration, UI) |
 | Azure Container Registry | Basic | Stores Docker images |
 | Application Gateway | Standard_v2 | Public entry point + TLS |
 | Azure Document Intelligence | S0 | OCR extraction |
@@ -171,18 +170,18 @@ File uploaded to "raw" container
 | Application Insights | — | Monitoring |
 | Virtual Network | — | Network isolation |
 
-### 1. Deploy Infrastructure
+### 1. Deploy Infrastructure + Code
 
-Use the included Bicep template to deploy all Azure resources:
+The Bicep template deploys all Azure resources **and** automatically builds the Docker image from this repo into ACR:
 
 ```bash
 # Login to Azure
 az login
 
-# Create a resource group
-az group create --name rg-docprocessor --location swedencentral
+# Create a resource group (pick a region with available capacity)
+az group create --name rg-docprocessor --location westeurope
 
-# Deploy infrastructure
+# Deploy infrastructure + auto-build code
 az deployment group create \
   --resource-group rg-docprocessor \
   --template-file infrastructure/main.bicep \
@@ -191,36 +190,13 @@ az deployment group create \
 
 Or click the **Deploy to Azure** button at the top of this page.
 
-> **Note:** After deployment, you'll need to manually configure:
-> - Azure OpenAI deployment names in the Function App settings
-> - Azure Document Intelligence endpoint
-> - Function host key in the Application Gateway rewrite rules
+> The deployment takes ~15 minutes. It creates all Azure resources, builds the Docker image in ACR, and configures the Function App to pull from it automatically.
 
-### 2. Build & Deploy the Function App
+> **Tip:** If you get a "No available instances" error, try a different region (e.g., `westeurope`, `eastus`).
 
-```bash
-# Build Docker image using Azure Container Registry (no local Docker needed)
-az acr build \
-  --registry <your-acr-name> \
-  --image preocr-func:v1 \
-  --file function-app/Dockerfile \
-  function-app/
+### 2. Configure App Settings
 
-# Set the Function App to use the new image
-az webapp config container set \
-  --resource-group rg-docprocessor \
-  --name <your-func-app-name> \
-  --container-image-name <your-acr>.azurecr.io/preocr-func:v1
-
-# Restart to pull the new image
-az functionapp restart \
-  --resource-group rg-docprocessor \
-  --name <your-func-app-name>
-```
-
-### 3. Configure App Settings
-
-Set the required environment variables on the Function App:
+After deployment, set the required AI service endpoints:
 
 ```bash
 az functionapp config appsettings set \
@@ -238,7 +214,7 @@ az functionapp config appsettings set \
     "STORAGE_ACCOUNT_KEY=<your-storage-key>"
 ```
 
-### 4. Access the Application
+### 3. Access the Application
 
 Navigate to your Application Gateway's public URL:
 ```
@@ -271,7 +247,8 @@ intelligent-document-processor/
 │       ├── region_detector.py        # Stamp/signature/table detection
 │       └── auto_tuner.py             # Automatic parameter tuning
 ├── infrastructure/
-│   └── main.bicep                    # All Azure resources (IaC)
+│   ├── main.bicep                    # All Azure resources (IaC)
+│   └── azuredeploy.json              # ARM template (generated from Bicep)
 └── docs/
     └── images/
         └── architecture.svg          # Architecture diagram
