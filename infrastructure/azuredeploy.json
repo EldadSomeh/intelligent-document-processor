@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "1364455137453071296"
+      "templateHash": "5740046510697824851"
     }
   },
   "parameters": {
@@ -392,7 +392,7 @@
         "virtualNetworkSubnetId": "[variables('integrationSubnetId')]",
         "vnetRouteAllEnabled": true,
         "siteConfig": {
-          "linuxFxVersion": "[format('DOCKER|{0}/{1}:{2}', reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer, parameters('imageName'), parameters('imageTag'))]",
+          "linuxFxVersion": "",
           "appSettings": [
             {
               "name": "AzureWebJobsStorage",
@@ -764,6 +764,10 @@
             "value": "[variables('acrName')]"
           },
           {
+            "name": "ACR_LOGIN",
+            "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer]"
+          },
+          {
             "name": "IMAGE_NAME",
             "value": "[parameters('imageName')]"
           },
@@ -784,7 +788,7 @@
             "value": "[variables('funcAppName')]"
           }
         ],
-        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Done!\"\r\n    "
+        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 30\r\n      echo \"Done!\"\r\n    "
       },
       "dependsOn": [
         "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",

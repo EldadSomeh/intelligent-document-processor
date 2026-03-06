@@ -279,7 +279,9 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
     virtualNetworkSubnetId: integrationSubnetId
     vnetRouteAllEnabled: true
     siteConfig: {
-      linuxFxVersion: 'DOCKER|${acr.properties.loginServer}/${imageName}:${imageTag}'
+      // linuxFxVersion is set later by buildScript after the Docker image is built
+      // in ACR — avoids BadRequest when the image doesn't exist yet.
+      linuxFxVersion: ''
       appSettings: [
         // Connection-string AzureWebJobsStorage — avoids Azure AD role-propagation
         // delay that causes 403 on fresh deployments when using identity-based auth.
@@ -573,6 +575,7 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     retentionInterval: 'P1D'
     environmentVariables: [
       { name: 'ACR_NAME',       value: acr.name }
+      { name: 'ACR_LOGIN',      value: acr.properties.loginServer }
       { name: 'IMAGE_NAME',     value: imageName }
       { name: 'IMAGE_TAG',      value: imageTag }
       { name: 'SOURCE_REPO',    value: sourceRepoUrl }
@@ -586,8 +589,16 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
         sleep 10
         az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1
       }
+      echo "Configuring Function App to use the new image..."
+      az functionapp config container set \
+        --resource-group $RG_NAME \
+        --name $FUNC_APP_NAME \
+        --image "$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG" \
+        --registry-server "https://$ACR_LOGIN" 2>&1
       echo "Restarting Function App to pull new image..."
       az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1
+      echo "Waiting for Function App to start..."
+      sleep 30
       echo "Done!"
     '''
   }
