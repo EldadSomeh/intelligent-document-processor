@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔍 Intelligent Document Processor
+# Intelligent Document Processor
 
 **An end-to-end Azure-native pipeline that transforms scanned documents into structured, AI-generated summaries — from upload through image enhancement, OCR extraction, to intelligent summarization.**
 
