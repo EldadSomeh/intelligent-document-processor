@@ -190,24 +190,58 @@ File uploaded to "raw" container
 
 ## Getting Started
 
-### Prerequisites
+### What You Need to Prepare (Prerequisites)
 
-- **Azure Subscription** with permission to create resources
-- **Azure CLI** (`az`) installed and logged in
-- **Docker** (optional — for local development; cloud build uses ACR)
+Before clicking **Deploy to Azure**, make sure you have the following ready:
 
-### Azure Services Required
+| # | Prerequisite | Details |
+|---|-------------|---------|
+| 1 | **Azure Subscription** | An active subscription with **Owner** or **Contributor + User Access Administrator** role (the template creates role assignments) |
+| 2 | **Resource Provider registration** | The following providers must be registered on your subscription: `Microsoft.Web`, `Microsoft.Storage`, `Microsoft.Network`, `Microsoft.ContainerRegistry`, `Microsoft.Insights`, `Microsoft.ManagedIdentity`, `Microsoft.Resources` — most are registered by default; run `az provider register --namespace <name>` if needed |
+| 3 | **Azure OpenAI resource** | A deployed Azure OpenAI service with these **model deployments already created**: |
+|   | | - **GPT-4o-mini** (or GPT-4o) — for text summarization |
+|   | | - **GPT-4o** — for Vision / figure analysis |
+|   | | - **text-embedding-3-small** — for semantic example re-ranking |
+| 4 | **Azure Document Intelligence resource** | An S0 (or higher) Document Intelligence resource — needed for OCR extraction |
+| 5 | **Region with capacity** | Choose a region that has availability for **App Service Plan P1v3** (or B1 for lower cost). Sweden Central, West Europe, East US, and North Europe typically work well |
+| 6 | **Azure CLI** (for CLI deployment) | `az` CLI installed and logged in — only needed if deploying via CLI instead of the portal button |
 
-| Service | SKU | Purpose |
-|---------|-----|---------|
-| Azure Functions | P1v3 (Linux, Docker) | Runs the entire pipeline (preprocessing, OCR, summarization, orchestration, UI) |
-| Azure Container Registry | Basic | Stores Docker images |
-| Application Gateway | Standard_v2 | Public entry point + TLS |
-| Azure Document Intelligence | S0 | OCR extraction |
-| Azure OpenAI | Standard | GPT-4o-mini + text-embedding-3-small |
-| Storage Account | Standard_LRS | Blob + Table storage |
-| Application Insights | — | Monitoring |
-| Virtual Network | — | Network isolation |
+> **Note:** Azure OpenAI and Document Intelligence are **not** created by the template — you must provision them separately and provide their endpoints/keys after deployment (see Step 2 below).
+
+### What the Deployment Creates Automatically
+
+The Bicep template (one-click **Deploy to Azure** button) provisions and configures **all** of the following — no manual resource creation needed:
+
+| Resource | Type / SKU | What It Does |
+|----------|-----------|--------------|
+| **Storage Account** | Standard_LRS | Blob containers (`raw`, `artifacts`, `outputs`), Table Storage (Durable Functions state), Queue Storage (internal messaging) |
+| **Virtual Network** | 10.0.0.0/16 (3 subnets) | `snet-integration` (Function App), `snet-pe` (Private Endpoints), `snet-appgw` (Application Gateway) |
+| **Private DNS Zones** | 4 zones | For blob, file, table, and queue private endpoint resolution |
+| **Private Endpoints** | 4 endpoints | Secures Storage Account access over the VNet (blob, file, table, queue) |
+| **Azure Container Registry** | Basic | Stores the Docker image for the Function App |
+| **Application Insights** | — | Telemetry, logging, and monitoring for the Function App |
+| **App Service Plan** | P1v3 Linux | Hosts the Function App (configurable via `funcPlanSku` / `funcPlanTier` parameters) |
+| **Function App** | Linux, Docker container | Runs the entire pipeline — preprocessing, OCR gateway, summarization, Durable orchestrator, and dashboard UI |
+| **Application Gateway v2** | Standard_v2, capacity 1 | Public HTTPS entry point with TLS termination, HTTP→HTTPS redirect, root→`/api/ui` rewrite, and automatic `x-functions-key` header injection |
+| **Public IP** | Standard, Static | Assigned to the Application Gateway with a DNS label (`<project>-<env>-<suffix>.swedencentral.cloudapp.azure.com`) |
+| **User-Assigned Managed Identity** | — | Used by the deployment script to build and push the Docker image to ACR |
+| **Role Assignments** | 5 assignments | Storage Blob Data Owner, Queue Data Contributor, Table Data Contributor (Function App), AcrPush + Contributor (build identity) |
+| **Self-Signed TLS Certificate** | Embedded PFX | Pre-generated placeholder cert for HTTPS — replace with your own for production |
+| **ACR Build Task** | Deployment Script | Builds the Docker image from the GitHub repo directly in ACR (no local Docker needed) |
+
+> **Total resources created: ~25** (including subnets, DNS zone links, and role assignments)
+
+### Deployment Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `location` | Resource group location | Azure region |
+| `projectName` | `preocr` | Prefix for all resource names |
+| `env` | `dev` | Environment suffix (`dev`, `staging`, `prod`) |
+| `funcPlanSku` | `P1v3` | App Service Plan SKU — use `B1` for lower cost |
+| `funcPlanTier` | `PremiumV3` | App Service Plan tier — use `Basic` with `B1` |
+| `sourceRepoUrl` | This repo | Git URL for ACR build |
+| `vnetAddressPrefix` | `10.0.0.0/16` | VNet address space |
 
 ### 1. Deploy Infrastructure + Code
 
@@ -236,11 +270,15 @@ Or click the **Deploy to Azure** button at the top of this page.
 > 2. Use a **lower-cost SKU** by adding: `--parameters funcPlanSku=B1 funcPlanTier=Basic`
 > 3. Create a **new resource group** (capacity is allocated per stamp)
 
-### 2. Configure App Settings
+### 2. Configure App Settings (Required Post-Deployment Step)
 
-After deployment, set the required AI service endpoints:
+The deployment creates all infrastructure but **does not provision Azure OpenAI or Document Intelligence** — these must exist beforehand. After deployment, configure the Function App with your AI service credentials:
 
 ```bash
+# Get your function app name (it includes a random suffix)
+az functionapp list --resource-group rg-docprocessor --query "[].name" -o tsv
+
+# Set required AI service settings
 az functionapp config appsettings set \
   --resource-group rg-docprocessor \
   --name <your-func-app-name> \
@@ -251,10 +289,10 @@ az functionapp config appsettings set \
     "AZURE_OPENAI_KEY=<your-openai-key>" \
     "AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini" \
     "AZURE_OPENAI_VISION_DEPLOYMENT=gpt-4o" \
-    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small" \
-    "STORAGE_ACCOUNT_URL=https://<your-storage>.blob.core.windows.net" \
-    "STORAGE_ACCOUNT_KEY=<your-storage-key>"
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small"
 ```
+
+> **Note:** `STORAGE_ACCOUNT_URL` and `STORAGE_ACCOUNT_KEY` are automatically set by the template — you don't need to configure them.
 
 ### 3. Access the Application
 
@@ -263,7 +301,37 @@ Navigate to your Application Gateway's public URL:
 https://<your-appgw-fqdn>.cloudapp.azure.com/
 ```
 
-The root URL automatically redirects to the dashboard UI.
+The root URL automatically redirects to the dashboard UI. The function key is auto-injected — no `?code=` needed.
+
+> **TLS Note:** The deployment includes a self-signed placeholder certificate. Your browser will show a security warning — this is expected. For production, replace the certificate with one from a trusted CA (see [Replacing the TLS Certificate](#replacing-the-tls-certificate) below).
+
+### 4. Verify Everything Works
+
+| Check | How |
+|-------|-----|
+| **Dashboard loads** | Browse to `https://<fqdn>/` — should show the PreOCR Lab UI |
+| **Upload works** | Drag-and-drop a PDF or image into the upload zone |
+| **Pipeline completes** | Watch the 4-step tracker: Upload → Preprocess → OCR → Summary |
+| **Backend health** | `az network application-gateway show-backend-health -g <rg> -n <appgw-name>` — should show "Healthy" |
+
+### Replacing the TLS Certificate
+
+The deployment includes a **self-signed placeholder certificate** for HTTPS. For production, replace it with a certificate from a trusted CA:
+
+```bash
+# 1. Generate a PFX from your CA-issued cert + key (must use OpenSSL format)
+openssl pkcs12 -export -out mycert.pfx -inkey server.key -in server.crt -certfile ca-chain.crt
+
+# 2. Upload to the Application Gateway
+az network application-gateway ssl-cert update \
+  --resource-group <rg> \
+  --gateway-name <appgw-name> \
+  --name appGwSslCert \
+  --cert-file mycert.pfx \
+  --cert-password <pfx-password>
+```
+
+> **Important:** The PFX must be generated with OpenSSL (not Windows `Export-PfxCertificate`) to avoid `ApplicationGatewaySslCertificateInvalidData` errors.
 
 ---
 
