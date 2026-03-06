@@ -2699,14 +2699,52 @@ def dashboard(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("Dashboard not found", status_code=404)
 
 
+def _get_function_key() -> str:
+    """Return the default function key.
+
+    Priority:
+    1. PREOCR_FUNCTION_KEY env var (explicit override / set by buildScript)
+    2. Auto-discover via the local admin endpoint
+       (http://localhost:{ADMIN_PORT}/admin/host/keys)
+    The result is cached in-process so we only fetch once.
+    """
+    cached = getattr(_get_function_key, "_cached", None)
+    if cached is not None:
+        return cached
+
+    # 1) Explicit env var
+    key = os.environ.get("PREOCR_FUNCTION_KEY", "")
+    if key:
+        _get_function_key._cached = key
+        return key
+
+    # 2) Auto-discover from the local admin API
+    import urllib.request, urllib.error  # noqa: E401
+    admin_port = os.environ.get("FUNCTIONS_HOST_ADMIN_PORT", "")
+    admin_url = f"http://localhost:{admin_port}/admin/host/keys" if admin_port else None
+    try:
+        if admin_url:
+            req_obj = urllib.request.Request(admin_url)
+            with urllib.request.urlopen(req_obj, timeout=5) as resp:
+                data = json.loads(resp.read())
+                for k in data.get("keys", []):
+                    if k.get("name") == "default":
+                        key = k.get("value", "")
+                        break
+    except Exception:
+        logger.debug("Could not auto-discover function key from admin API")
+
+    _get_function_key._cached = key
+    return key
+
+
 @app.route(route="ui", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def ui(req: func.HttpRequest) -> func.HttpResponse:
     """Serve the new React UI (single-file build).
 
     Injects the default function key so the URL stays clean
-    (no ?code= needed).  The key is read at build time from
-    the PREOCR_FUNCTION_KEY env var or falls back to the
-    first available host key.
+    (no ?code= needed).  The key is auto-discovered from the
+    PREOCR_FUNCTION_KEY env var or the Functions admin API.
     """
     html_path = os.path.join(os.path.dirname(__file__), "static", "ui.html")
     try:
@@ -2714,7 +2752,7 @@ def ui(req: func.HttpRequest) -> func.HttpResponse:
             html = f.read()
 
         # Inject function key so the React app can call authenticated APIs
-        func_key = os.environ.get("PREOCR_FUNCTION_KEY", "")
+        func_key = _get_function_key()
         key_script = f'<script>window.__PREOCR_KEY__="{func_key}";</script>'
         html = html.replace("</head>", f"{key_script}</head>", 1)
 

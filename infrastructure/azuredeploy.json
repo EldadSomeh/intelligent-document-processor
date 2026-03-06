@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "1992353690288336338"
+      "templateHash": "13602063837967179820"
     }
   },
   "parameters": {
@@ -563,7 +563,7 @@
             "value": "[variables('funcAppName')]"
           }
         ],
-        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 30\r\n      echo \"Done!\"\r\n    "
+        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 60\r\n      # Retrieve the default function key and persist as app setting\r\n      echo \"Retrieving default function key...\"\r\n      for i in 1 2 3 4 5; do\r\n        FUNC_KEY=$(az functionapp keys list --resource-group $RG_NAME --name $FUNC_APP_NAME --query \"functionKeys.default\" -o tsv 2>/dev/null)\r\n        if [ -n \"$FUNC_KEY\" ] && [ \"$FUNC_KEY\" != \"None\" ]; then\r\n          echo \"Function key retrieved on attempt $i\"\r\n          break\r\n        fi\r\n        echo \"Attempt $i: Function key not ready, waiting 30s...\"\r\n        sleep 30\r\n      done\r\n      if [ -n \"$FUNC_KEY\" ] && [ \"$FUNC_KEY\" != \"None\" ]; then\r\n        az functionapp config appsettings set \\\r\n          --resource-group $RG_NAME --name $FUNC_APP_NAME \\\r\n          --settings \"PREOCR_FUNCTION_KEY=$FUNC_KEY\" --output none 2>&1\r\n        echo \"Function key persisted as PREOCR_FUNCTION_KEY\"\r\n      else\r\n        echo \"WARNING: Could not retrieve function key. Set PREOCR_FUNCTION_KEY manually.\"\r\n      fi\r\n      echo \"Done!\"\r\n    "
       },
       "dependsOn": [
         "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",

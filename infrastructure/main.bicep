@@ -392,7 +392,26 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       echo "Restarting Function App to pull new image..."
       az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1
       echo "Waiting for Function App to start..."
-      sleep 30
+      sleep 60
+      # Retrieve the default function key and persist as app setting
+      echo "Retrieving default function key..."
+      for i in 1 2 3 4 5; do
+        FUNC_KEY=$(az functionapp keys list --resource-group $RG_NAME --name $FUNC_APP_NAME --query "functionKeys.default" -o tsv 2>/dev/null)
+        if [ -n "$FUNC_KEY" ] && [ "$FUNC_KEY" != "None" ]; then
+          echo "Function key retrieved on attempt $i"
+          break
+        fi
+        echo "Attempt $i: Function key not ready, waiting 30s..."
+        sleep 30
+      done
+      if [ -n "$FUNC_KEY" ] && [ "$FUNC_KEY" != "None" ]; then
+        az functionapp config appsettings set \
+          --resource-group $RG_NAME --name $FUNC_APP_NAME \
+          --settings "PREOCR_FUNCTION_KEY=$FUNC_KEY" --output none 2>&1
+        echo "Function key persisted as PREOCR_FUNCTION_KEY"
+      else
+        echo "WARNING: Could not retrieve function key. Set PREOCR_FUNCTION_KEY manually."
+      fi
       echo "Done!"
     '''
   }
