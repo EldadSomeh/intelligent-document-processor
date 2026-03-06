@@ -359,6 +359,10 @@ resource appGwPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
 resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
   name: appGwName
   location: location
+  // Wait for the build script to finish so the Function App's Docker container
+  // is fully running before calling funcApp.listKeys() — avoids BadRequest on
+  // first deployment when the Functions runtime hasn't initialised yet.
+  dependsOn: [buildScript]
   properties: {
     sku: {
       name: 'Standard_v2'

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "14348456459812733188"
+      "templateHash": "1364455137453071296"
     }
   },
   "parameters": {
@@ -703,6 +703,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName'))]",
+        "[resourceId('Microsoft.Resources/deploymentScripts', variables('buildScriptName'))]",
         "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]",
         "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
       ]
