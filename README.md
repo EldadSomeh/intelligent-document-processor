@@ -52,6 +52,26 @@ The entire pipeline is orchestrated by **Azure Durable Functions** with built-in
 
 ---
 
+## Technology Stack
+
+| Component | Built With | Details |
+|-----------|-----------|---------|
+| **Dashboard UI** | React 18, Tailwind CSS, shadcn/ui, Lucide icons | Single self-contained HTML file — no separate frontend build or hosting needed. Includes drag-and-drop upload, real-time pipeline tracker, document detail views, settings panel, and few-shot examples manager |
+| **Backend API** | Python 3.11, Azure Functions v4 | HTTP-triggered functions for preprocessing, OCR, summarization, upload, and document management. Runs as a Docker container on Linux |
+| **Orchestration** | Azure Durable Functions (Python SDK) | Blob-triggered workflow with fan-out/fan-in, activity chaining, and configurable retry policies. Replaces Logic App for lower latency and code-level control |
+| **Image Processing** | OpenCV (headless), NumPy, Pillow, pdf2image, poppler-utils | Diagnosis-driven enhancement pipeline — grayscale conversion, auto-crop, denoising, contrast/brightness correction, deskew, upscaling, and region-aware adaptive thresholding |
+| **Region Detection** | OpenCV contour analysis + color segmentation | Detects stamps (red/blue hue), signatures, and tables to protect them during binarization |
+| **OCR Extraction** | Azure Document Intelligence (prebuilt-layout model) | Parallel per-page processing with structured output — text, tables, figures, and bounding boxes |
+| **AI Summarization** | Azure OpenAI (GPT-4o-mini) | Structured summary generation with few-shot in-context learning. System prompt + curated examples injected per call |
+| **Smart Figure Analysis** | Azure OpenAI (GPT-4o Vision) | Classifies extracted figures and filters out logos/stamps/headers to avoid unnecessary Vision model calls |
+| **Embedding Re-Ranking** | Azure OpenAI (text-embedding-3-small) | Cosine similarity scoring to rank few-shot examples by semantic relevance to the input document |
+| **Storage** | Azure Blob Storage, Table Storage, Queue Storage | Blob: raw uploads, enhanced pages, output summaries. Table: Durable Functions orchestration state. Queue: internal messaging |
+| **Networking** | Azure Application Gateway v2, VNet, Private Endpoints, NSGs | TLS termination, function key injection via rewrite rules, VNet isolation with subnet segmentation |
+| **Container Runtime** | Docker (Python 3.11 base image from MCR), Azure Container Registry | Image built automatically during deployment via ACR Tasks; Function App pulls from ACR |
+| **Infrastructure as Code** | Bicep → ARM template | One-click deployment of all resources via "Deploy to Azure" button or CLI |
+
+---
+
 ## Architecture
 
 The solution runs entirely on Azure, secured within a Virtual Network:
