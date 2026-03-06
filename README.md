@@ -11,6 +11,21 @@
 
 ---
 
+## Supported File Formats
+
+| Format | Extension(s) | Notes |
+|--------|-------------|-------|
+| **PDF** | `.pdf` | Single and multi-page — automatically split into per-page images |
+| **JPEG** | `.jpg`, `.jpeg` | |
+| **PNG** | `.png` | |
+| **TIFF** | `.tif`, `.tiff` | |
+| **BMP** | `.bmp` | |
+| **WebP** | `.webp` | |
+
+> **Tip:** For best OCR results, upload scanned documents at 200 DPI or higher. The pipeline will automatically upscale low-resolution images when needed.
+
+---
+
 ## What This Does
 
 Scanned documents (PDFs, images) are often noisy, skewed, or low-contrast — making OCR unreliable. This solution solves that with a **fully automated, diagnosis-driven pipeline**:
