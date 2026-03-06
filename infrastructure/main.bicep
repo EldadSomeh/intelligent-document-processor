@@ -344,7 +344,7 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 // ── Application Gateway v2 ──────────────────────────────────────────────────
 // Public entry-point: TLS termination (embedded self-signed placeholder cert),
 // HTTP→HTTPS 301 redirect, root "/" → /api/ui rewrite, and x-functions-key
-// header injection (auto-resolved via funcApp.listKeys()) so callers do not
+// header injection (auto-resolved via buildScript output) so callers do not
 // need ?code= in the URL.
 // Replace placeholderCertPfx with your own certificate for production.
 
@@ -362,9 +362,8 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
   name: appGwName
   location: location
   // Wait for the build script to finish so the Function App's Docker container
-  // is fully running before calling funcApp.listKeys() — avoids BadRequest on
-  // first deployment when the Functions runtime hasn't initialised yet.
-  dependsOn: [buildScript]
+  // is fully running. The function key is retrieved from buildScript output
+  // (not funcApp.listKeys()) to avoid BadRequest on first deployment.
   properties: {
     sku: {
       name: 'Standard_v2'
@@ -462,7 +461,7 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
               ruleSequence: 100
               actionSet: {
                 requestHeaderConfigurations: [
-                  { headerName: 'x-functions-key', headerValue: funcApp.listKeys().functionKeys.default }
+                  { headerName: 'x-functions-key', headerValue: buildScript.properties.outputs.functionKey }
                 ]
               }
             }
@@ -598,7 +597,22 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       echo "Restarting Function App to pull new image..."
       az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1
       echo "Waiting for Function App to start..."
-      sleep 30
+      sleep 60
+      echo "Retrieving function default key..."
+      for i in 1 2 3 4 5; do
+        FUNC_KEY=$(az functionapp keys list --resource-group $RG_NAME --name $FUNC_APP_NAME --query "functionKeys.default" -o tsv 2>/dev/null)
+        if [ -n "$FUNC_KEY" ] && [ "$FUNC_KEY" != "" ]; then
+          echo "Function key retrieved successfully."
+          break
+        fi
+        echo "Attempt $i: Function key not available yet, waiting 30s..."
+        sleep 30
+      done
+      if [ -z "$FUNC_KEY" ]; then
+        echo "ERROR: Could not retrieve function key after 5 attempts"
+        exit 1
+      fi
+      echo "{\"functionKey\":\"$FUNC_KEY\"}" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json
       echo "Done!"
     '''
   }

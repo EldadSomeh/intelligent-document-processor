@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "5740046510697824851"
+      "templateHash": "5029315569448094514"
     }
   },
   "parameters": {
@@ -620,7 +620,7 @@
           {
             "name": "mainRewriteRules",
             "properties": {
-              "rewriteRules": "[concat(createArray(createObject('name', 'rootToUi', 'ruleSequence', 50, 'conditions', createArray(createObject('variable', 'var_uri_path', 'pattern', '^/$', 'ignoreCase', true(), 'negate', false())), 'actionSet', createObject('urlConfiguration', createObject('modifiedPath', '/api/ui', 'reroute', false())))), createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', listKeys(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').functionKeys.default))))))]"
+              "rewriteRules": "[concat(createArray(createObject('name', 'rootToUi', 'ruleSequence', 50, 'conditions', createArray(createObject('variable', 'var_uri_path', 'pattern', '^/$', 'ignoreCase', true(), 'negate', false())), 'actionSet', createObject('urlConfiguration', createObject('modifiedPath', '/api/ui', 'reroute', false())))), createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', reference(resourceId('Microsoft.Resources/deploymentScripts', variables('buildScriptName')), '2023-08-01').outputs.functionKey))))))]"
             }
           }
         ],
@@ -788,7 +788,7 @@
             "value": "[variables('funcAppName')]"
           }
         ],
-        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 30\r\n      echo \"Done!\"\r\n    "
+        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 60\r\n      echo \"Retrieving function default key...\"\r\n      for i in 1 2 3 4 5; do\r\n        FUNC_KEY=$(az functionapp keys list --resource-group $RG_NAME --name $FUNC_APP_NAME --query \"functionKeys.default\" -o tsv 2>/dev/null)\r\n        if [ -n \"$FUNC_KEY\" ] && [ \"$FUNC_KEY\" != \"\" ]; then\r\n          echo \"Function key retrieved successfully.\"\r\n          break\r\n        fi\r\n        echo \"Attempt $i: Function key not available yet, waiting 30s...\"\r\n        sleep 30\r\n      done\r\n      if [ -z \"$FUNC_KEY\" ]; then\r\n        echo \"ERROR: Could not retrieve function key after 5 attempts\"\r\n        exit 1\r\n      fi\r\n      echo \"{\\\"functionKey\\\":\\\"$FUNC_KEY\\\"}\" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json\r\n      echo \"Done!\"\r\n    "
       },
       "dependsOn": [
         "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
