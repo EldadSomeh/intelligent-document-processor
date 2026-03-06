@@ -69,7 +69,7 @@ The entire pipeline is orchestrated by **Azure Durable Functions** with built-in
 | **Smart Figure Analysis** | Azure OpenAI (GPT-4o Vision) | Classifies extracted figures and filters out logos/stamps/headers to avoid unnecessary Vision model calls |
 | **Embedding Re-Ranking** | Azure OpenAI (text-embedding-3-small) | Cosine similarity scoring to rank few-shot examples by semantic relevance to the input document |
 | **Storage** | Azure Blob Storage, Table Storage, Queue Storage | Blob: raw uploads, enhanced pages, output summaries. Table: Durable Functions orchestration state. Queue: internal messaging |
-| **Networking** | Azure Application Gateway v2, VNet, Private Endpoints, NSGs | TLS termination, function key injection via rewrite rules, VNet isolation with subnet segmentation |
+| **Networking** | VNet, Private Endpoints | VNet isolation with subnet segmentation for Function App and private endpoints |
 | **Container Runtime** | Docker (Python 3.11 base image from MCR), Azure Container Registry | Image built automatically during deployment via ACR Tasks; Function App pulls from ACR |
 | **Infrastructure as Code** | Bicep → ARM template | One-click deployment of all resources via "Deploy to Azure" button or CLI |
 
@@ -83,12 +83,6 @@ The solution runs entirely on Azure, secured within a Virtual Network:
 Internet (HTTPS)
      │
      ▼
-┌─────────────────────┐
-│  Application Gateway │ ── TLS termination, auto-injects function key
-│  (snet-appgw)        │
-└────────┬────────────┘
-         │ Private Endpoint
-         ▼
 ┌─────────────────────┐     ┌──────────────────┐
 │   Function App       │────▶│  Blob Storage     │  raw / artifacts / outputs
 │   (Docker, Python)   │     └──────────────────┘
@@ -107,7 +101,7 @@ Internet (HTTPS)
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Application Gateway** | Azure App GW v2 (Standard_v2) | Public entry point — TLS, HTTP→HTTPS, injects function key header |
+
 | **Orchestrator** | Azure Durable Functions (Python) | Blob trigger → preprocess → OCR → summarize with retry policies |
 | **Preprocessing** | Azure Function App (Python 3.11, Docker) | Image enhancement + API + UI |
 | **Summarization** | Azure OpenAI (gpt-4o-mini) | Structured summary generation with few-shot examples |
@@ -117,11 +111,9 @@ Internet (HTTPS)
 
 ### Networking & Security
 
-- **VNet-isolated** — Function App accessible only via private endpoint
-- **TLS everywhere** — Self-signed certificate auto-generated at deploy time; HTTP→HTTPS 301 redirect enforced. Replace with a real cert (custom domain + Let’s Encrypt or Azure-managed certificate) for production.
-- **Root redirect** — Browsing to `/` is rewritten server-side to `/api/ui` (the dashboard)
-- **No keys in URLs** — Application Gateway injects `x-functions-key` header via rewrite rules
-- **NSG rules** — Only ports 80, 443, and Azure GatewayManager (65200-65535)
+- **VNet-isolated** — Storage Account accessible only via private endpoints
+- **Function App** accessible directly via its `*.azurewebsites.net` URL with function key authentication
+- **Private endpoints** for all storage services (blob, queue, table, file)
 
 ---
 
@@ -215,21 +207,18 @@ The Bicep template (one-click **Deploy to Azure** button) provisions and configu
 | Resource | Type / SKU | What It Does |
 |----------|-----------|--------------|
 | **Storage Account** | Standard_LRS | Blob containers (`raw`, `artifacts`, `outputs`), Table Storage (Durable Functions state), Queue Storage (internal messaging) |
-| **Virtual Network** | 10.0.0.0/16 (3 subnets) | `snet-integration` (Function App), `snet-pe` (Private Endpoints), `snet-appgw` (Application Gateway) |
+| **Virtual Network** | 10.0.0.0/16 (2 subnets) | `snet-integration` (Function App), `snet-pe` (Private Endpoints) |
 | **Private DNS Zones** | 4 zones | For blob, file, table, and queue private endpoint resolution |
 | **Private Endpoints** | 4 endpoints | Secures Storage Account access over the VNet (blob, file, table, queue) |
 | **Azure Container Registry** | Basic | Stores the Docker image for the Function App |
 | **Application Insights** | — | Telemetry, logging, and monitoring for the Function App |
 | **App Service Plan** | P1v3 Linux | Hosts the Function App (configurable via `funcPlanSku` / `funcPlanTier` parameters) |
 | **Function App** | Linux, Docker container | Runs the entire pipeline — preprocessing, OCR gateway, summarization, Durable orchestrator, and dashboard UI |
-| **Application Gateway v2** | Standard_v2, capacity 1 | Public HTTPS entry point with TLS termination, HTTP→HTTPS redirect, root→`/api/ui` rewrite, and automatic `x-functions-key` header injection |
-| **Public IP** | Standard, Static | Assigned to the Application Gateway with a DNS label (`<project>-<env>-<suffix>.swedencentral.cloudapp.azure.com`) |
 | **User-Assigned Managed Identity** | — | Used by the deployment script to build and push the Docker image to ACR |
 | **Role Assignments** | 5 assignments | Storage Blob Data Owner, Queue Data Contributor, Table Data Contributor (Function App), AcrPush + Contributor (build identity) |
-| **Self-Signed TLS Certificate** | Embedded PFX | Pre-generated placeholder cert for HTTPS — replace with your own for production |
 | **ACR Build Task** | Deployment Script | Builds the Docker image from the GitHub repo directly in ACR (no local Docker needed) |
 
-> **Total resources created: ~25** (including subnets, DNS zone links, and role assignments)
+> **Total resources created: ~20** (including subnets, DNS zone links, and role assignments)
 
 ### Deployment Parameters
 
@@ -296,42 +285,23 @@ az functionapp config appsettings set \
 
 ### 3. Access the Application
 
-Navigate to your Application Gateway's public URL:
+Navigate to your Function App's URL:
 ```
-https://<your-appgw-fqdn>.cloudapp.azure.com/
+https://<your-func-app-name>.azurewebsites.net/api/ui?code=<your-function-key>
 ```
 
-The root URL automatically redirects to the dashboard UI. The function key is auto-injected — no `?code=` needed.
-
-> **TLS Note:** The deployment includes a self-signed placeholder certificate. Your browser will show a security warning — this is expected. For production, replace the certificate with one from a trusted CA (see [Replacing the TLS Certificate](#replacing-the-tls-certificate) below).
+To get the function key:
+```bash
+az functionapp keys list --resource-group <rg> --name <func-app-name> --query "functionKeys.default" -o tsv
+```
 
 ### 4. Verify Everything Works
 
 | Check | How |
 |-------|-----|
-| **Dashboard loads** | Browse to `https://<fqdn>/` — should show the PreOCR Lab UI |
+| **Dashboard loads** | Browse to `https://<func-app>.azurewebsites.net/api/ui?code=<key>` — should show the PreOCR Lab UI |
 | **Upload works** | Drag-and-drop a PDF or image into the upload zone |
 | **Pipeline completes** | Watch the 4-step tracker: Upload → Preprocess → OCR → Summary |
-| **Backend health** | `az network application-gateway show-backend-health -g <rg> -n <appgw-name>` — should show "Healthy" |
-
-### Replacing the TLS Certificate
-
-The deployment includes a **self-signed placeholder certificate** for HTTPS. For production, replace it with a certificate from a trusted CA:
-
-```bash
-# 1. Generate a PFX from your CA-issued cert + key (must use OpenSSL format)
-openssl pkcs12 -export -out mycert.pfx -inkey server.key -in server.crt -certfile ca-chain.crt
-
-# 2. Upload to the Application Gateway
-az network application-gateway ssl-cert update \
-  --resource-group <rg> \
-  --gateway-name <appgw-name> \
-  --name appGwSslCert \
-  --cert-file mycert.pfx \
-  --cert-password <pfx-password>
-```
-
-> **Important:** The PFX must be generated with OpenSSL (not Windows `Export-PfxCertificate`) to avoid `ApplicationGatewaySslCertificateInvalidData` errors.
 
 ---
 

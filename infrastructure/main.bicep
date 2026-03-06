@@ -8,8 +8,7 @@
 //   • App Service Plan (Linux) + Function App (Docker, Python 3.11)
 //   • Durable Functions orchestration (blob trigger → preprocess → OCR → summarize)
 //   • Application Insights
-//   • VNet with integration, private-endpoint, and appgw subnets
-//   • Application Gateway v2 (public entry point, injects func key)
+//   • VNet with integration and private-endpoint subnets
 //   • User-Assigned Identity + Deployment Script to auto-build Docker image
 //   • Role assignments: Blob Data Owner, Queue Data Contributor,
 //     Table Data Contributor for the Function App managed identity
@@ -50,17 +49,11 @@ param integrationSubnetPrefix string = '10.0.1.0/24'
 @description('Subnet for private endpoints.')
 param privateEndpointSubnetPrefix string = '10.0.2.0/24'
 
-@description('Subnet for Application Gateway.')
-param appGwSubnetPrefix string = '10.0.3.0/24'
-
 @description('App Service Plan SKU for the Function App. Use P1v3 (default) for best availability, or B1 for lower cost.')
 param funcPlanSku string = 'P1v3'
 
 @description('App Service Plan tier for the Function App (PremiumV3, Basic, Standard).')
 param funcPlanTier string = 'PremiumV3'
-
-// functionHostKey is now auto-resolved from the Function App after creation
-// via funcApp.listKeys().functionKeys.default — no manual input needed.
 
 // ── Variables ───────────────────────────────────────────────────────────────
 
@@ -74,16 +67,8 @@ var buildScriptName       = '${projectName}-${env}-build-image'
 var buildIdentityName     = '${projectName}-${env}-build-id'
 var vnetName              = '${projectName}-${env}-vnet-${suffix}'
 
-// Pre-generated self-signed PFX (CN=placeholder.local, 10-yr expiry, password=TemplateCert1!).
-// Generated with OpenSSL for Azure Application Gateway compatibility.
-// Replace with your own certificate for production / custom domain.
-var placeholderCertPfx    = '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'
 var integrationSubnetName = 'snet-integration'
 var peSubnetName          = 'snet-private-endpoints'
-var appGwSubnetName       = 'snet-appgw'
-var appGwName             = '${projectName}-${env}-appgw'
-var appGwPipName          = '${projectName}-${env}-appgw-pip'
-var appGwPipDnsLabel      = '${projectName}-${env}-${suffix}'
 
 // Well-known role definition IDs
 var storageBlobDataOwner         = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -158,12 +143,6 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = if (empty(existin
           privateEndpointNetworkPolicies: 'Disabled'
         }
       }
-      {
-        name: appGwSubnetName
-        properties: {
-          addressPrefix: appGwSubnetPrefix
-        }
-      }
     ]
   }
 }
@@ -171,7 +150,6 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = if (empty(existin
 var effectiveVnetId          = empty(existingVnetId) ? vnet.id : existingVnetId
 var integrationSubnetId      = '${effectiveVnetId}/subnets/${integrationSubnetName}'
 var privateEndpointSubnetId  = '${effectiveVnetId}/subnets/${peSubnetName}'
-var appGwSubnetId            = '${effectiveVnetId}/subnets/${appGwSubnetName}'
 
 // ── Private DNS Zones ───────────────────────────────────────────────────────
 
@@ -341,189 +319,6 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-// ── Application Gateway v2 ──────────────────────────────────────────────────
-// Public entry-point: TLS termination (embedded self-signed placeholder cert),
-// HTTP→HTTPS 301 redirect, root "/" → /api/ui rewrite, and x-functions-key
-// header injection (auto-resolved via buildScript output) so callers do not
-// need ?code= in the URL.
-// Replace placeholderCertPfx with your own certificate for production.
-
-resource appGwPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
-  name: appGwPipName
-  location: location
-  sku: { name: 'Standard' }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-    dnsSettings: { domainNameLabel: appGwPipDnsLabel }
-  }
-}
-
-resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
-  name: appGwName
-  location: location
-  // Wait for the build script to finish so the Function App's Docker container
-  // is fully running. The function key is retrieved from buildScript output
-  // (not funcApp.listKeys()) to avoid BadRequest on first deployment.
-  properties: {
-    sku: {
-      name: 'Standard_v2'
-      tier: 'Standard_v2'
-      capacity: 1
-    }
-    gatewayIPConfigurations: [
-      {
-        name: 'appGatewayIpConfig'
-        properties: { subnet: { id: appGwSubnetId } }
-      }
-    ]
-    frontendIPConfigurations: [
-      {
-        name: 'appGwFrontendIP'
-        properties: { publicIPAddress: { id: appGwPip.id } }
-      }
-    ]
-    frontendPorts: [
-      { name: 'port80',  properties: { port: 80 } }
-      { name: 'port443', properties: { port: 443 } }
-    ]
-    sslCertificates: [
-      {
-        name: 'appGwSslCert'
-        properties: {
-          data: placeholderCertPfx
-          password: 'TemplateCert1!'
-        }
-      }
-    ]
-    backendAddressPools: [
-      {
-        name: 'funcBackendPool'
-        properties: {
-          backendAddresses: [
-            { fqdn: funcApp.properties.defaultHostName }
-          ]
-        }
-      }
-    ]
-    probes: [
-      {
-        name: 'funcHealthProbe'
-        properties: {
-          protocol: 'Https'
-          host: funcApp.properties.defaultHostName
-          path: '/'
-          interval: 30
-          timeout: 30
-          unhealthyThreshold: 3
-          pickHostNameFromBackendHttpSettings: false
-          match: { statusCodes: [ '200-401' ] }
-        }
-      }
-    ]
-    backendHttpSettingsCollection: [
-      {
-        name: 'funcHttpSettings'
-        properties: {
-          port: 443
-          protocol: 'Https'
-          pickHostNameFromBackendAddress: true
-          requestTimeout: 60
-          probe: { id: resourceId('Microsoft.Network/applicationGateways/probes', appGwName, 'funcHealthProbe') }
-        }
-      }
-    ]
-    rewriteRuleSets: [
-      {
-        name: 'mainRewriteRules'
-        properties: {
-          rewriteRules: concat([
-            {
-              name: 'rootToUi'
-              ruleSequence: 50
-              conditions: [
-                {
-                  variable: 'var_uri_path'
-                  pattern: '^/$'
-                  ignoreCase: true
-                  negate: false
-                }
-              ]
-              actionSet: {
-                urlConfiguration: {
-                  modifiedPath: '/api/ui'
-                  reroute: false
-                }
-              }
-            }
-          ], [
-            {
-              name: 'addFuncKeyHeader'
-              ruleSequence: 100
-              actionSet: {
-                requestHeaderConfigurations: [
-                  { headerName: 'x-functions-key', headerValue: buildScript.properties.outputs.functionKey }
-                ]
-              }
-            }
-          ])
-        }
-      }
-    ]
-    redirectConfigurations: [
-      {
-        name: 'httpToHttpsRedirect'
-        properties: {
-          redirectType: 'Permanent'
-          targetListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'httpsListener') }
-          includePath: true
-          includeQueryString: true
-        }
-      }
-    ]
-    httpListeners: [
-      {
-        name: 'httpListener'
-        properties: {
-          frontendIPConfiguration: { id: resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', appGwName, 'appGwFrontendIP') }
-          frontendPort: { id: resourceId('Microsoft.Network/applicationGateways/frontendPorts', appGwName, 'port80') }
-          protocol: 'Http'
-        }
-      }
-      {
-        name: 'httpsListener'
-        properties: {
-          frontendIPConfiguration: { id: resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', appGwName, 'appGwFrontendIP') }
-          frontendPort: { id: resourceId('Microsoft.Network/applicationGateways/frontendPorts', appGwName, 'port443') }
-          protocol: 'Https'
-          sslCertificate: { id: resourceId('Microsoft.Network/applicationGateways/sslCertificates', appGwName, 'appGwSslCert') }
-        }
-      }
-    ]
-    requestRoutingRules: [
-      {
-        name: 'httpRedirectRule'
-        properties: {
-          priority: 100
-          ruleType: 'Basic'
-          httpListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'httpListener') }
-          redirectConfiguration: { id: resourceId('Microsoft.Network/applicationGateways/redirectConfigurations', appGwName, 'httpToHttpsRedirect') }
-        }
-      }
-      {
-        name: 'httpsToFuncRule'
-        properties: {
-          priority: 200
-          ruleType: 'Basic'
-          httpListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'httpsListener') }
-          backendAddressPool: { id: resourceId('Microsoft.Network/applicationGateways/backendAddressPools', appGwName, 'funcBackendPool') }
-          backendHttpSettings: { id: resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', appGwName, 'funcHttpSettings') }
-          rewriteRuleSet: { id: resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', appGwName, 'mainRewriteRules') }
-        }
-      }
-    ]
-  }
-}
-
 // ── Managed Identity for Deployment Script ──────────────────────────────────
 // A user-assigned identity that has AcrPush + Contributor rights so the
 // deploymentScript can run `az acr build` and restart the Function App.
@@ -597,22 +392,7 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       echo "Restarting Function App to pull new image..."
       az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1
       echo "Waiting for Function App to start..."
-      sleep 60
-      echo "Retrieving function default key..."
-      for i in 1 2 3 4 5; do
-        FUNC_KEY=$(az functionapp keys list --resource-group $RG_NAME --name $FUNC_APP_NAME --query "functionKeys.default" -o tsv 2>/dev/null)
-        if [ -n "$FUNC_KEY" ] && [ "$FUNC_KEY" != "" ]; then
-          echo "Function key retrieved successfully."
-          break
-        fi
-        echo "Attempt $i: Function key not available yet, waiting 30s..."
-        sleep 30
-      done
-      if [ -z "$FUNC_KEY" ]; then
-        echo "ERROR: Could not retrieve function key after 5 attempts"
-        exit 1
-      fi
-      echo "{\"functionKey\":\"$FUNC_KEY\"}" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json
+      sleep 30
       echo "Done!"
     '''
   }
@@ -628,4 +408,4 @@ output storageAccountName    string = storageAccount.name
 output storageAccountBlobUrl string = storageAccount.properties.primaryEndpoints.blob
 output acrLoginServer        string = acr.properties.loginServer
 output functionAppHostname   string = funcApp.properties.defaultHostName
-output appGwPublicFqdn       string = appGwPip.properties.dnsSettings.fqdn
+output functionAppUrl        string = 'https://${funcApp.properties.defaultHostName}'

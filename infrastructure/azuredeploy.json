@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "5029315569448094514"
+      "templateHash": "1992353690288336338"
     }
   },
   "parameters": {
@@ -86,13 +86,6 @@
         "description": "Subnet for private endpoints."
       }
     },
-    "appGwSubnetPrefix": {
-      "type": "string",
-      "defaultValue": "10.0.3.0/24",
-      "metadata": {
-        "description": "Subnet for Application Gateway."
-      }
-    },
     "funcPlanSku": {
       "type": "string",
       "defaultValue": "P1v3",
@@ -118,20 +111,14 @@
     "buildScriptName": "[format('{0}-{1}-build-image', parameters('projectName'), parameters('env'))]",
     "buildIdentityName": "[format('{0}-{1}-build-id', parameters('projectName'), parameters('env'))]",
     "vnetName": "[format('{0}-{1}-vnet-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
-    "placeholderCertPfx": "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",
     "integrationSubnetName": "snet-integration",
     "peSubnetName": "snet-private-endpoints",
-    "appGwSubnetName": "snet-appgw",
-    "appGwName": "[format('{0}-{1}-appgw', parameters('projectName'), parameters('env'))]",
-    "appGwPipName": "[format('{0}-{1}-appgw-pip', parameters('projectName'), parameters('env'))]",
-    "appGwPipDnsLabel": "[format('{0}-{1}-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
     "storageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
     "storageQueueDataContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
     "storageTableDataContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
     "effectiveVnetId": "[if(empty(parameters('existingVnetId')), resourceId('Microsoft.Network/virtualNetworks', variables('vnetName')), parameters('existingVnetId'))]",
     "integrationSubnetId": "[format('{0}/subnets/{1}', variables('effectiveVnetId'), variables('integrationSubnetName'))]",
     "privateEndpointSubnetId": "[format('{0}/subnets/{1}', variables('effectiveVnetId'), variables('peSubnetName'))]",
-    "appGwSubnetId": "[format('{0}/subnets/{1}', variables('effectiveVnetId'), variables('appGwSubnetName'))]",
     "privateDnsZones": [
       "[format('privatelink.blob.{0}', environment().suffixes.storage)]",
       "[format('privatelink.queue.{0}', environment().suffixes.storage)]",
@@ -247,12 +234,6 @@
             "properties": {
               "addressPrefix": "[parameters('privateEndpointSubnetPrefix')]",
               "privateEndpointNetworkPolicies": "Disabled"
-            }
-          },
-          {
-            "name": "[variables('appGwSubnetName')]",
-            "properties": {
-              "addressPrefix": "[parameters('appGwSubnetPrefix')]"
             }
           }
         ]
@@ -503,212 +484,6 @@
       ]
     },
     {
-      "type": "Microsoft.Network/publicIPAddresses",
-      "apiVersion": "2023-11-01",
-      "name": "[variables('appGwPipName')]",
-      "location": "[parameters('location')]",
-      "sku": {
-        "name": "Standard"
-      },
-      "properties": {
-        "publicIPAllocationMethod": "Static",
-        "dnsSettings": {
-          "domainNameLabel": "[variables('appGwPipDnsLabel')]"
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Network/applicationGateways",
-      "apiVersion": "2023-11-01",
-      "name": "[variables('appGwName')]",
-      "location": "[parameters('location')]",
-      "properties": {
-        "sku": {
-          "name": "Standard_v2",
-          "tier": "Standard_v2",
-          "capacity": 1
-        },
-        "gatewayIPConfigurations": [
-          {
-            "name": "appGatewayIpConfig",
-            "properties": {
-              "subnet": {
-                "id": "[variables('appGwSubnetId')]"
-              }
-            }
-          }
-        ],
-        "frontendIPConfigurations": [
-          {
-            "name": "appGwFrontendIP",
-            "properties": {
-              "publicIPAddress": {
-                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName'))]"
-              }
-            }
-          }
-        ],
-        "frontendPorts": [
-          {
-            "name": "port80",
-            "properties": {
-              "port": 80
-            }
-          },
-          {
-            "name": "port443",
-            "properties": {
-              "port": 443
-            }
-          }
-        ],
-        "sslCertificates": [
-          {
-            "name": "appGwSslCert",
-            "properties": {
-              "data": "[variables('placeholderCertPfx')]",
-              "password": "TemplateCert1!"
-            }
-          }
-        ],
-        "backendAddressPools": [
-          {
-            "name": "funcBackendPool",
-            "properties": {
-              "backendAddresses": [
-                {
-                  "fqdn": "[reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName]"
-                }
-              ]
-            }
-          }
-        ],
-        "probes": [
-          {
-            "name": "funcHealthProbe",
-            "properties": {
-              "protocol": "Https",
-              "host": "[reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName]",
-              "path": "/",
-              "interval": 30,
-              "timeout": 30,
-              "unhealthyThreshold": 3,
-              "pickHostNameFromBackendHttpSettings": false,
-              "match": {
-                "statusCodes": [
-                  "200-401"
-                ]
-              }
-            }
-          }
-        ],
-        "backendHttpSettingsCollection": [
-          {
-            "name": "funcHttpSettings",
-            "properties": {
-              "port": 443,
-              "protocol": "Https",
-              "pickHostNameFromBackendAddress": true,
-              "requestTimeout": 60,
-              "probe": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/probes', variables('appGwName'), 'funcHealthProbe')]"
-              }
-            }
-          }
-        ],
-        "rewriteRuleSets": [
-          {
-            "name": "mainRewriteRules",
-            "properties": {
-              "rewriteRules": "[concat(createArray(createObject('name', 'rootToUi', 'ruleSequence', 50, 'conditions', createArray(createObject('variable', 'var_uri_path', 'pattern', '^/$', 'ignoreCase', true(), 'negate', false())), 'actionSet', createObject('urlConfiguration', createObject('modifiedPath', '/api/ui', 'reroute', false())))), createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', reference(resourceId('Microsoft.Resources/deploymentScripts', variables('buildScriptName')), '2023-08-01').outputs.functionKey))))))]"
-            }
-          }
-        ],
-        "redirectConfigurations": [
-          {
-            "name": "httpToHttpsRedirect",
-            "properties": {
-              "redirectType": "Permanent",
-              "targetListener": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'httpsListener')]"
-              },
-              "includePath": true,
-              "includeQueryString": true
-            }
-          }
-        ],
-        "httpListeners": [
-          {
-            "name": "httpListener",
-            "properties": {
-              "frontendIPConfiguration": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('appGwName'), 'appGwFrontendIP')]"
-              },
-              "frontendPort": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('appGwName'), 'port80')]"
-              },
-              "protocol": "Http"
-            }
-          },
-          {
-            "name": "httpsListener",
-            "properties": {
-              "frontendIPConfiguration": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('appGwName'), 'appGwFrontendIP')]"
-              },
-              "frontendPort": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('appGwName'), 'port443')]"
-              },
-              "protocol": "Https",
-              "sslCertificate": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/sslCertificates', variables('appGwName'), 'appGwSslCert')]"
-              }
-            }
-          }
-        ],
-        "requestRoutingRules": [
-          {
-            "name": "httpRedirectRule",
-            "properties": {
-              "priority": 100,
-              "ruleType": "Basic",
-              "httpListener": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'httpListener')]"
-              },
-              "redirectConfiguration": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/redirectConfigurations', variables('appGwName'), 'httpToHttpsRedirect')]"
-              }
-            }
-          },
-          {
-            "name": "httpsToFuncRule",
-            "properties": {
-              "priority": 200,
-              "ruleType": "Basic",
-              "httpListener": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'httpsListener')]"
-              },
-              "backendAddressPool": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('appGwName'), 'funcBackendPool')]"
-              },
-              "backendHttpSettings": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('appGwName'), 'funcHttpSettings')]"
-              },
-              "rewriteRuleSet": {
-                "id": "[resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', variables('appGwName'), 'mainRewriteRules')]"
-              }
-            }
-          }
-        ]
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName'))]",
-        "[resourceId('Microsoft.Resources/deploymentScripts', variables('buildScriptName'))]",
-        "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]",
-        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
-      ]
-    },
-    {
       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
       "apiVersion": "2023-01-31",
       "name": "[variables('buildIdentityName')]",
@@ -788,7 +563,7 @@
             "value": "[variables('funcAppName')]"
           }
         ],
-        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 60\r\n      echo \"Retrieving function default key...\"\r\n      for i in 1 2 3 4 5; do\r\n        FUNC_KEY=$(az functionapp keys list --resource-group $RG_NAME --name $FUNC_APP_NAME --query \"functionKeys.default\" -o tsv 2>/dev/null)\r\n        if [ -n \"$FUNC_KEY\" ] && [ \"$FUNC_KEY\" != \"\" ]; then\r\n          echo \"Function key retrieved successfully.\"\r\n          break\r\n        fi\r\n        echo \"Attempt $i: Function key not available yet, waiting 30s...\"\r\n        sleep 30\r\n      done\r\n      if [ -z \"$FUNC_KEY\" ]; then\r\n        echo \"ERROR: Could not retrieve function key after 5 attempts\"\r\n        exit 1\r\n      fi\r\n      echo \"{\\\"functionKey\\\":\\\"$FUNC_KEY\\\"}\" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json\r\n      echo \"Done!\"\r\n    "
+        "scriptContent": "      echo \"Building Docker image in ACR...\"\r\n      az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO --no-logs 2>&1 || {\r\n        echo \"ACR build failed, retrying...\"\r\n        sleep 10\r\n        az acr build --registry $ACR_NAME --image $IMAGE_NAME:$IMAGE_TAG $SOURCE_REPO 2>&1\r\n      }\r\n      echo \"Configuring Function App to use the new image...\"\r\n      az functionapp config container set \\\r\n        --resource-group $RG_NAME \\\r\n        --name $FUNC_APP_NAME \\\r\n        --image \"$ACR_LOGIN/$IMAGE_NAME:$IMAGE_TAG\" \\\r\n        --registry-server \"https://$ACR_LOGIN\" 2>&1\r\n      echo \"Restarting Function App to pull new image...\"\r\n      az functionapp restart --resource-group $RG_NAME --name $FUNC_APP_NAME 2>&1\r\n      echo \"Waiting for Function App to start...\"\r\n      sleep 30\r\n      echo \"Done!\"\r\n    "
       },
       "dependsOn": [
         "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
@@ -816,9 +591,9 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName]"
     },
-    "appGwPublicFqdn": {
+    "functionAppUrl": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName')), '2023-11-01').dnsSettings.fqdn]"
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName)]"
     }
   }
 }
