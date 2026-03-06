@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "11439477507207458144"
+      "templateHash": "14348456459812733188"
     }
   },
   "parameters": {
@@ -105,13 +105,6 @@
       "defaultValue": "PremiumV3",
       "metadata": {
         "description": "App Service Plan tier for the Function App (PremiumV3, Basic, Standard)."
-      }
-    },
-    "functionHostKey": {
-      "type": "securestring",
-      "defaultValue": "",
-      "metadata": {
-        "description": "Function App host key – injected by AG as x-functions-key header."
       }
     }
   },
@@ -627,7 +620,7 @@
           {
             "name": "mainRewriteRules",
             "properties": {
-              "rewriteRules": "[concat(createArray(createObject('name', 'rootToUi', 'ruleSequence', 50, 'conditions', createArray(createObject('variable', 'var_uri_path', 'pattern', '^/$', 'ignoreCase', true(), 'negate', false())), 'actionSet', createObject('urlConfiguration', createObject('modifiedPath', '/api/ui', 'reroute', false())))), if(not(empty(parameters('functionHostKey'))), createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', parameters('functionHostKey')))))), createArray()))]"
+              "rewriteRules": "[concat(createArray(createObject('name', 'rootToUi', 'ruleSequence', 50, 'conditions', createArray(createObject('variable', 'var_uri_path', 'pattern', '^/$', 'ignoreCase', true(), 'negate', false())), 'actionSet', createObject('urlConfiguration', createObject('modifiedPath', '/api/ui', 'reroute', false())))), createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', listKeys(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').functionKeys.default))))))]"
             }
           }
         ],

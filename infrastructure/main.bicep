@@ -59,9 +59,8 @@ param funcPlanSku string = 'P1v3'
 @description('App Service Plan tier for the Function App (PremiumV3, Basic, Standard).')
 param funcPlanTier string = 'PremiumV3'
 
-@secure()
-@description('Function App host key – injected by AG as x-functions-key header.')
-param functionHostKey string = ''
+// functionHostKey is now auto-resolved from the Function App after creation
+// via funcApp.listKeys().functionKeys.default — no manual input needed.
 
 // ── Variables ───────────────────────────────────────────────────────────────
 
@@ -343,7 +342,8 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 // ── Application Gateway v2 ──────────────────────────────────────────────────
 // Public entry-point: TLS termination (embedded self-signed placeholder cert),
 // HTTP→HTTPS 301 redirect, root "/" → /api/ui rewrite, and x-functions-key
-// header injection so callers do not need ?code= in the URL.
+// header injection (auto-resolved via funcApp.listKeys()) so callers do not
+// need ?code= in the URL.
 // Replace placeholderCertPfx with your own certificate for production.
 
 resource appGwPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
@@ -450,17 +450,17 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
                 }
               }
             }
-          ], !empty(functionHostKey) ? [
+          ], [
             {
               name: 'addFuncKeyHeader'
               ruleSequence: 100
               actionSet: {
                 requestHeaderConfigurations: [
-                  { headerName: 'x-functions-key', headerValue: functionHostKey }
+                  { headerName: 'x-functions-key', headerValue: funcApp.listKeys().functionKeys.default }
                 ]
               }
             }
-          ] : [])
+          ])
         }
       }
     ]
