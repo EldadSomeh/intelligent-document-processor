@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "5271805340114681790"
+      "templateHash": "14533791955193828578"
     }
   },
   "parameters": {
@@ -124,6 +124,7 @@
     "funcAppName": "[format('{0}-{1}-func-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
     "buildScriptName": "[format('{0}-{1}-build-image', parameters('projectName'), parameters('env'))]",
     "buildIdentityName": "[format('{0}-{1}-build-id', parameters('projectName'), parameters('env'))]",
+    "certScriptName": "[format('{0}-{1}-gen-cert', parameters('projectName'), parameters('env'))]",
     "vnetName": "[format('{0}-{1}-vnet-{2}', parameters('projectName'), parameters('env'), variables('suffix'))]",
     "integrationSubnetName": "snet-integration",
     "peSubnetName": "snet-private-endpoints",
@@ -509,6 +510,34 @@
       ]
     },
     {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[variables('certScriptName')]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName')))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.63.0",
+        "timeout": "PT10M",
+        "retentionInterval": "P1D",
+        "environmentVariables": [
+          {
+            "name": "FQDN",
+            "value": "[format('{0}.{1}.cloudapp.azure.com', variables('appGwPipDnsLabel'), parameters('location'))]"
+          }
+        ],
+        "scriptContent": "      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\\r\n        -keyout /tmp/tls.key -out /tmp/tls.crt \\\r\n        -subj \"/CN=${FQDN}\" -addext \"subjectAltName=DNS:${FQDN}\"\r\n      openssl pkcs12 -export -out /tmp/tls.pfx \\\r\n        -inkey /tmp/tls.key -in /tmp/tls.crt -passout pass:TemplateCert1!\r\n      PFX_B64=$(base64 -w 0 /tmp/tls.pfx)\r\n      echo \"{\\\"pfx\\\":\\\"${PFX_B64}\\\"}\" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json\r\n      echo \"Certificate generated for ${FQDN}\"\r\n    "
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('buildIdentityName'))]"
+      ]
+    },
+    {
       "type": "Microsoft.Network/publicIPAddresses",
       "apiVersion": "2023-11-01",
       "name": "[variables('appGwPipName')]",
@@ -560,6 +589,21 @@
             "properties": {
               "port": 80
             }
+          },
+          {
+            "name": "port443",
+            "properties": {
+              "port": 443
+            }
+          }
+        ],
+        "sslCertificates": [
+          {
+            "name": "appGwSslCert",
+            "properties": {
+              "data": "[reference(resourceId('Microsoft.Resources/deploymentScripts', variables('certScriptName')), '2023-08-01').outputs.pfx]",
+              "password": "TemplateCert1!"
+            }
           }
         ],
         "backendAddressPools": [
@@ -607,7 +651,27 @@
             }
           }
         ],
-        "rewriteRuleSets": "[if(not(empty(parameters('functionHostKey'))), createArray(createObject('name', 'injectFuncKey', 'properties', createObject('rewriteRules', createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', parameters('functionHostKey'))))))))), createArray())]",
+        "rewriteRuleSets": [
+          {
+            "name": "mainRewriteRules",
+            "properties": {
+              "rewriteRules": "[concat(createArray(createObject('name', 'rootToUi', 'ruleSequence', 50, 'conditions', createArray(createObject('variable', 'var_uri_path', 'pattern', '^/$', 'ignoreCase', true(), 'negate', false())), 'actionSet', createObject('urlConfiguration', createObject('modifiedPath', '/api/ui', 'reroute', false())))), if(not(empty(parameters('functionHostKey'))), createArray(createObject('name', 'addFuncKeyHeader', 'ruleSequence', 100, 'actionSet', createObject('requestHeaderConfigurations', createArray(createObject('headerName', 'x-functions-key', 'headerValue', parameters('functionHostKey')))))), createArray()))]"
+            }
+          }
+        ],
+        "redirectConfigurations": [
+          {
+            "name": "httpToHttpsRedirect",
+            "properties": {
+              "redirectType": "Permanent",
+              "targetListener": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'httpsListener')]"
+              },
+              "includePath": true,
+              "includeQueryString": true
+            }
+          }
+        ],
         "httpListeners": [
           {
             "name": "httpListener",
@@ -620,16 +684,44 @@
               },
               "protocol": "Http"
             }
+          },
+          {
+            "name": "httpsListener",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('appGwName'), 'appGwFrontendIP')]"
+              },
+              "frontendPort": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('appGwName'), 'port443')]"
+              },
+              "protocol": "Https",
+              "sslCertificate": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/sslCertificates', variables('appGwName'), 'appGwSslCert')]"
+              }
+            }
           }
         ],
         "requestRoutingRules": [
           {
-            "name": "httpToFunc",
+            "name": "httpRedirectRule",
             "properties": {
               "priority": 100,
               "ruleType": "Basic",
               "httpListener": {
                 "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'httpListener')]"
+              },
+              "redirectConfiguration": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/redirectConfigurations', variables('appGwName'), 'httpToHttpsRedirect')]"
+              }
+            }
+          },
+          {
+            "name": "httpsToFuncRule",
+            "properties": {
+              "priority": 200,
+              "ruleType": "Basic",
+              "httpListener": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'httpsListener')]"
               },
               "backendAddressPool": {
                 "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('appGwName'), 'funcBackendPool')]"
@@ -637,13 +729,16 @@
               "backendHttpSettings": {
                 "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('appGwName'), 'funcHttpSettings')]"
               },
-              "rewriteRuleSet": "[if(not(empty(parameters('functionHostKey'))), createObject('id', resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', variables('appGwName'), 'injectFuncKey')), null())]"
+              "rewriteRuleSet": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', variables('appGwName'), 'mainRewriteRules')]"
+              }
             }
           }
         ]
       },
       "dependsOn": [
         "[resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName'))]",
+        "[resourceId('Microsoft.Resources/deploymentScripts', variables('certScriptName'))]",
         "[resourceId('Microsoft.Web/sites', variables('funcAppName'))]",
         "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
       ]

@@ -118,7 +118,8 @@ Internet (HTTPS)
 ### Networking & Security
 
 - **VNet-isolated** — Function App accessible only via private endpoint
-- **TLS everywhere** — Let's Encrypt auto-renewed certificates
+- **TLS everywhere** — Self-signed certificate auto-generated at deploy time; HTTP→HTTPS 301 redirect enforced. Replace with a real cert (custom domain + Let’s Encrypt or Azure-managed certificate) for production.
+- **Root redirect** — Browsing to `/` is rewritten server-side to `/api/ui` (the dashboard)
 - **No keys in URLs** — Application Gateway injects `x-functions-key` header via rewrite rules
 - **NSG rules** — Only ports 80, 443, and Azure GatewayManager (65200-65535)
 

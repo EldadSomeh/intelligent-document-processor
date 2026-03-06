@@ -73,6 +73,7 @@ var funcPlanName          = '${projectName}-${env}-func-plan'
 var funcAppName           = '${projectName}-${env}-func-${suffix}'
 var buildScriptName       = '${projectName}-${env}-build-image'
 var buildIdentityName     = '${projectName}-${env}-build-id'
+var certScriptName        = '${projectName}-${env}-gen-cert'
 var vnetName              = '${projectName}-${env}-vnet-${suffix}'
 var integrationSubnetName = 'snet-integration'
 var peSubnetName          = 'snet-private-endpoints'
@@ -335,10 +336,44 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+// ── Self-signed TLS Certificate ─────────────────────────────────────────────
+// Generated at deploy time.  Replace with a real certificate (custom domain +
+// Let's Encrypt, or Azure-managed cert via Front Door) for production use.
+
+resource certScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: certScriptName
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${buildIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    retentionInterval: 'P1D'
+    environmentVariables: [
+      { name: 'FQDN', value: '${appGwPipDnsLabel}.${location}.cloudapp.azure.com' }
+    ]
+    scriptContent: '''
+      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout /tmp/tls.key -out /tmp/tls.crt \
+        -subj "/CN=${FQDN}" -addext "subjectAltName=DNS:${FQDN}"
+      openssl pkcs12 -export -out /tmp/tls.pfx \
+        -inkey /tmp/tls.key -in /tmp/tls.crt -passout pass:TemplateCert1!
+      PFX_B64=$(base64 -w 0 /tmp/tls.pfx)
+      echo "{\"pfx\":\"${PFX_B64}\"}" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json
+      echo "Certificate generated for ${FQDN}"
+    '''
+  }
+}
+
 // ── Application Gateway v2 ──────────────────────────────────────────────────
-// Public entry-point for the Function App UI & API.
-// Injects the Function host key via x-functions-key header so callers do not
-// need to supply ?code= in the URL.
+// Public entry-point: TLS termination (self-signed cert by default),
+// HTTP→HTTPS 301 redirect, root "/" → /api/ui rewrite, and x-functions-key
+// header injection so callers do not need ?code= in the URL.
 
 resource appGwPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   name: appGwPipName
@@ -372,7 +407,17 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
       }
     ]
     frontendPorts: [
-      { name: 'port80', properties: { port: 80 } }
+      { name: 'port80',  properties: { port: 80 } }
+      { name: 'port443', properties: { port: 443 } }
+    ]
+    sslCertificates: [
+      {
+        name: 'appGwSslCert'
+        properties: {
+          data: certScript.properties.outputs.pfx
+          password: 'TemplateCert1!'
+        }
+      }
     ]
     backendAddressPools: [
       {
@@ -411,11 +456,30 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
         }
       }
     ]
-    rewriteRuleSets: !empty(functionHostKey) ? [
+    rewriteRuleSets: [
       {
-        name: 'injectFuncKey'
+        name: 'mainRewriteRules'
         properties: {
-          rewriteRules: [
+          rewriteRules: concat([
+            {
+              name: 'rootToUi'
+              ruleSequence: 50
+              conditions: [
+                {
+                  variable: 'var_uri_path'
+                  pattern: '^/$'
+                  ignoreCase: true
+                  negate: false
+                }
+              ]
+              actionSet: {
+                urlConfiguration: {
+                  modifiedPath: '/api/ui'
+                  reroute: false
+                }
+              }
+            }
+          ], !empty(functionHostKey) ? [
             {
               name: 'addFuncKeyHeader'
               ruleSequence: 100
@@ -425,10 +489,21 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
                 ]
               }
             }
-          ]
+          ] : [])
         }
       }
-    ] : []
+    ]
+    redirectConfigurations: [
+      {
+        name: 'httpToHttpsRedirect'
+        properties: {
+          redirectType: 'Permanent'
+          targetListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'httpsListener') }
+          includePath: true
+          includeQueryString: true
+        }
+      }
+    ]
     httpListeners: [
       {
         name: 'httpListener'
@@ -438,17 +513,35 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
           protocol: 'Http'
         }
       }
+      {
+        name: 'httpsListener'
+        properties: {
+          frontendIPConfiguration: { id: resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', appGwName, 'appGwFrontendIP') }
+          frontendPort: { id: resourceId('Microsoft.Network/applicationGateways/frontendPorts', appGwName, 'port443') }
+          protocol: 'Https'
+          sslCertificate: { id: resourceId('Microsoft.Network/applicationGateways/sslCertificates', appGwName, 'appGwSslCert') }
+        }
+      }
     ]
     requestRoutingRules: [
       {
-        name: 'httpToFunc'
+        name: 'httpRedirectRule'
         properties: {
           priority: 100
           ruleType: 'Basic'
           httpListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'httpListener') }
+          redirectConfiguration: { id: resourceId('Microsoft.Network/applicationGateways/redirectConfigurations', appGwName, 'httpToHttpsRedirect') }
+        }
+      }
+      {
+        name: 'httpsToFuncRule'
+        properties: {
+          priority: 200
+          ruleType: 'Basic'
+          httpListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'httpsListener') }
           backendAddressPool: { id: resourceId('Microsoft.Network/applicationGateways/backendAddressPools', appGwName, 'funcBackendPool') }
           backendHttpSettings: { id: resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', appGwName, 'funcHttpSettings') }
-          rewriteRuleSet: !empty(functionHostKey) ? { id: resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', appGwName, 'injectFuncKey') } : null
+          rewriteRuleSet: { id: resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', appGwName, 'mainRewriteRules') }
         }
       }
     ]
@@ -526,7 +619,6 @@ resource buildScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   dependsOn: [
     buildAcrPush
     buildContributor
-    funcApp
   ]
 }
 
