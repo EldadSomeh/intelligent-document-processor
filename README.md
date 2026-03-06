@@ -285,21 +285,29 @@ az functionapp config appsettings set \
 
 ### 3. Access the Application
 
-Navigate to your Function App's URL:
+> **Important:** The dashboard is served at the **`/api/ui`** path — not the root URL.
+
+After deployment completes, open the **dashboardUrl** from the deployment outputs:
 ```
-https://<your-func-app-name>.azurewebsites.net/api/ui?code=<your-function-key>
+https://<your-func-app-name>.azurewebsites.net/api/ui
 ```
 
-To get the function key:
+The function key is automatically injected into the page by the server, so no `?code=` parameter is needed.
+
+Alternatively, you can get the URL from the CLI:
 ```bash
-az functionapp keys list --resource-group <rg> --name <func-app-name> --query "functionKeys.default" -o tsv
+# Get the dashboard URL
+az deployment group show -g <rg> -n <deployment-name> --query "properties.outputs.dashboardUrl.value" -o tsv
+
+# Or construct it manually
+echo "https://$(az functionapp show -g <rg> -n <func-app-name> --query defaultHostName -o tsv)/api/ui"
 ```
 
 ### 4. Verify Everything Works
 
 | Check | How |
 |-------|-----|
-| **Dashboard loads** | Browse to `https://<func-app>.azurewebsites.net/api/ui?code=<key>` — should show the PreOCR Lab UI |
+| **Dashboard loads** | Browse to `https://<func-app>.azurewebsites.net/api/ui` — should show the PreOCR Lab UI |
 | **Upload works** | Drag-and-drop a PDF or image into the upload zone |
 | **Pipeline completes** | Watch the 4-step tracker: Upload → Preprocess → OCR → Summary |
 

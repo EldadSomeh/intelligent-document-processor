@@ -428,3 +428,4 @@ output storageAccountBlobUrl string = storageAccount.properties.primaryEndpoints
 output acrLoginServer        string = acr.properties.loginServer
 output functionAppHostname   string = funcApp.properties.defaultHostName
 output functionAppUrl        string = 'https://${funcApp.properties.defaultHostName}'
+output dashboardUrl          string = 'https://${funcApp.properties.defaultHostName}/api/ui'

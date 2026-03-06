@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "13602063837967179820"
+      "templateHash": "71005886699878212"
     }
   },
   "parameters": {
@@ -594,6 +594,10 @@
     "functionAppUrl": {
       "type": "string",
       "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName)]"
+    },
+    "dashboardUrl": {
+      "type": "string",
+      "value": "[format('https://{0}/api/ui', reference(resourceId('Microsoft.Web/sites', variables('funcAppName')), '2023-12-01').defaultHostName)]"
     }
   }
 }
