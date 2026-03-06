@@ -11,7 +11,7 @@
 
 ---
 
-## 💡 What This Does
+## What This Does
 
 Scanned documents (PDFs, images) are often noisy, skewed, or low-contrast — making OCR unreliable. This solution solves that with a **fully automated, diagnosis-driven pipeline**:
 
@@ -37,7 +37,7 @@ The entire pipeline is orchestrated by **Azure Durable Functions** with built-in
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 The solution runs entirely on Azure, secured within a Virtual Network:
 
@@ -86,7 +86,7 @@ Internet (HTTPS)
 
 ---
 
-## 🖥️ Dashboard
+## Dashboard
 
 The built-in web UI provides:
 
@@ -99,7 +99,7 @@ The built-in web UI provides:
 
 ---
 
-## 📄 Image Processing Pipeline
+## Image Processing Pipeline
 
 The preprocessing is **diagnosis-driven** — it analyses each page and only applies fixes for detected problems:
 
@@ -122,7 +122,7 @@ The preprocessing is **diagnosis-driven** — it analyses each page and only app
 
 ---
 
-## 🔄 Durable Functions Orchestration
+## Durable Functions Orchestration
 
 ```
 File uploaded to "raw" container
@@ -149,7 +149,7 @@ File uploaded to "raw" container
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -228,7 +228,7 @@ The root URL automatically redirects to the dashboard UI.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 intelligent-document-processor/
@@ -259,7 +259,7 @@ intelligent-document-processor/
 
 ---
 
-## 🔌 API Reference
+## API Reference
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
@@ -278,7 +278,7 @@ intelligent-document-processor/
 
 ---
 
-## 🧠 Few-Shot Example System
+## Few-Shot Example System
 
 The summarization uses **in-context learning** — curated (input, ideal-summary) pairs are injected into each LLM call:
 
@@ -293,7 +293,7 @@ Examples are stored in `artifacts/examples/{id}/` with `input.txt`, `summary.txt
 
 ---
 
-## 🔧 Local Development
+## Local Development
 
 1. Clone the repo:
    ```bash
@@ -327,7 +327,7 @@ Examples are stored in `artifacts/examples/{id}/` with `input.txt`, `summary.txt
 
 ---
 
-## 📊 Quality Metrics
+## Quality Metrics
 
 Each processed page is scored on:
 
@@ -342,14 +342,14 @@ Each processed page is scored on:
 
 | Condition | Action |
 |-----------|--------|
-| blur < 15 or redaction > 90% | ❌ Fail |
-| blur < 50 or redaction > 70% or readiness < 0.30 | ⚠️ OCR with low confidence |
-| readiness < 0.50 | 🔄 Retry with aggressive preprocessing |
-| Otherwise | ✅ Send to OCR |
+| blur < 15 or redaction > 90% | Fail |
+| blur < 50 or redaction > 70% or readiness < 0.30 | OCR with low confidence |
+| readiness < 0.50 | Retry with aggressive preprocessing |
+| Otherwise | Send to OCR |
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
@@ -359,13 +359,13 @@ Each processed page is scored on:
 
 ---
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
 Built with:
 - [Azure Functions](https://learn.microsoft.com/azure/azure-functions/) — Serverless compute
