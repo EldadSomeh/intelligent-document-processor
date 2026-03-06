@@ -73,8 +73,11 @@ var funcPlanName          = '${projectName}-${env}-func-plan'
 var funcAppName           = '${projectName}-${env}-func-${suffix}'
 var buildScriptName       = '${projectName}-${env}-build-image'
 var buildIdentityName     = '${projectName}-${env}-build-id'
-var certScriptName        = '${projectName}-${env}-gen-cert'
 var vnetName              = '${projectName}-${env}-vnet-${suffix}'
+
+// Pre-generated self-signed PFX (CN=placeholder.local, 10-yr expiry, password=TemplateCert1!).
+// Replace with your own certificate for production / custom domain.
+var placeholderCertPfx    = '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'
 var integrationSubnetName = 'snet-integration'
 var peSubnetName          = 'snet-private-endpoints'
 var appGwSubnetName       = 'snet-appgw'
@@ -336,44 +339,11 @@ resource funcTableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-// ── Self-signed TLS Certificate ─────────────────────────────────────────────
-// Generated at deploy time.  Replace with a real certificate (custom domain +
-// Let's Encrypt, or Azure-managed cert via Front Door) for production use.
-
-resource certScript 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: certScriptName
-  location: location
-  kind: 'AzureCLI'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${buildIdentity.id}': {}
-    }
-  }
-  properties: {
-    azCliVersion: '2.63.0'
-    timeout: 'PT10M'
-    retentionInterval: 'P1D'
-    environmentVariables: [
-      { name: 'FQDN', value: '${appGwPipDnsLabel}.${location}.cloudapp.azure.com' }
-    ]
-    scriptContent: '''
-      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-        -keyout /tmp/tls.key -out /tmp/tls.crt \
-        -subj "/CN=${FQDN}" -addext "subjectAltName=DNS:${FQDN}"
-      openssl pkcs12 -export -out /tmp/tls.pfx \
-        -inkey /tmp/tls.key -in /tmp/tls.crt -passout pass:TemplateCert1!
-      PFX_B64=$(base64 -w 0 /tmp/tls.pfx)
-      echo "{\"pfx\":\"${PFX_B64}\"}" > $AZ_SCRIPTS_OUTPUT_DIRECTORY/result.json
-      echo "Certificate generated for ${FQDN}"
-    '''
-  }
-}
-
 // ── Application Gateway v2 ──────────────────────────────────────────────────
-// Public entry-point: TLS termination (self-signed cert by default),
+// Public entry-point: TLS termination (embedded self-signed placeholder cert),
 // HTTP→HTTPS 301 redirect, root "/" → /api/ui rewrite, and x-functions-key
 // header injection so callers do not need ?code= in the URL.
+// Replace placeholderCertPfx with your own certificate for production.
 
 resource appGwPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   name: appGwPipName
@@ -414,7 +384,7 @@ resource appGw 'Microsoft.Network/applicationGateways@2023-11-01' = {
       {
         name: 'appGwSslCert'
         properties: {
-          data: certScript.properties.outputs.pfx
+          data: placeholderCertPfx
           password: 'TemplateCert1!'
         }
       }
