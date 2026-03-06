@@ -277,13 +277,15 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       linuxFxVersion: 'DOCKER|${acr.properties.loginServer}/${imageName}:${imageTag}'
       appSettings: [
-        // Identity-based AzureWebJobsStorage (no keys!)
-        { name: 'AzureWebJobsStorage__accountName',  value: storageAccount.name }
+        // Connection-string AzureWebJobsStorage — avoids Azure AD role-propagation
+        // delay that causes 403 on fresh deployments when using identity-based auth.
+        { name: 'AzureWebJobsStorage',            value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}' }
         { name: 'FUNCTIONS_EXTENSION_VERSION',    value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME',       value: 'python' }
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
         { name: 'STORAGE_ACCOUNT_URL',            value: storageAccount.properties.primaryEndpoints.blob }
+        { name: 'STORAGE_ACCOUNT_KEY',            value: storageAccount.listKeys().keys[0].value }
         { name: 'DOCKER_REGISTRY_SERVER_URL',     value: 'https://${acr.properties.loginServer}' }
         { name: 'DOCKER_REGISTRY_SERVER_USERNAME', value: acr.listCredentials().username }
         { name: 'DOCKER_REGISTRY_SERVER_PASSWORD', value: acr.listCredentials().passwords[0].value }
