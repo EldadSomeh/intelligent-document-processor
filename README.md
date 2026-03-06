@@ -2,7 +2,7 @@
 
 # Intelligent Document Processor
 
-**An end-to-end Azure-native pipeline that transforms scanned documents into structured, AI-generated summaries — from upload through image enhancement, OCR extraction, to intelligent summarization.**
+**An end-to-end Azure-native pipeline that transforms scanned documents into structured, AI-generated summaries - from upload through image enhancement, OCR extraction, to intelligent summarization.**
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEldadSomeh%2Fintelligent-document-processor%2Fmain%2Finfrastructure%2Fazuredeploy.json)
 
