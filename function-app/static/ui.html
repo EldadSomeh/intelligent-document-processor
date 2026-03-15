@@ -391,8 +391,9 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
     .ft-jobs th{color:hsl(220 15% 45%);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
     .ft-close{position:absolute;top:16px;right:16px;background:none;border:none;color:hsl(220 15% 45%);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:4px;}
     .ft-close:hover{color:hsl(180 20% 92%);background:hsl(230 25% 14%);}
-    #ft-header-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:'Space Grotesk',system-ui,sans-serif;font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;height:2.25rem;padding:0 12px;border-radius:calc(0.25rem - 4px);border:1px solid hsl(230 25% 14%);background:transparent;color:hsl(180 15% 80%);cursor:pointer;transition:all .2s;white-space:nowrap;}
-    #ft-header-btn:hover{background:hsl(180 100% 50%/.1);border-color:hsl(180 100% 50%/.3);color:hsl(180 100% 50%);box-shadow:0 0 15px hsl(180 100% 50%/.15);}
+    #ft-header-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:'Space Grotesk',system-ui,sans-serif;font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;height:2.25rem;padding:0 12px;border-radius:calc(0.25rem - 2px);border:1px solid hsl(var(--input,230 25% 14%));background:hsl(var(--background,230 30% 4%));color:hsl(var(--foreground,180 20% 92%));cursor:pointer;transition:color .15s,background-color .15s,border-color .15s;white-space:nowrap;}
+    #ft-header-btn:hover{background:hsl(var(--accent,230 25% 12%));color:hsl(var(--accent-foreground,0 0% 98%));}
+    #ft-header-btn:focus-visible{outline:2px solid transparent;outline-offset:2px;box-shadow:var(--tw-ring-offset-shadow),0 0 0 2px hsl(var(--ring,180 100% 50%)),var(--tw-shadow,0 0 #0000);}
   `;
   document.head.appendChild(style);
 
