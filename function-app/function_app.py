@@ -2793,7 +2793,7 @@ def fine_tune_start(req: func.HttpRequest) -> func.HttpResponse:
         # Upload training file
         import io
         training_file = client.files.create(
-            file=io.BytesIO(jsonl_content.encode("utf-8")),
+            file=("training.jsonl", io.BytesIO(jsonl_content.encode("utf-8")), "application/jsonl"),
             purpose="fine-tune",
         )
         logger.info("Uploaded training file: %s (%d examples)", training_file.id, count)
