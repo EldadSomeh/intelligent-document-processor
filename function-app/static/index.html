@@ -1370,6 +1370,57 @@
         </div>
     </div>
 
+    <!-- Fine-Tuning Panel -->
+    <div class="settings-panel" id="fineTunePanel">
+        <div class="settings-header" onclick="toggleFineTune()">
+            <h3>🧠 Fine-Tune Model</h3>
+            <span class="settings-chevron" id="fineTuneChevron">▼</span>
+        </div>
+        <div class="settings-body">
+            <div class="settings-content">
+                <p style="color:var(--text-dim);font-size:0.85rem;margin:0 0 1rem;line-height:1.5;">
+                    Fine-tune the Azure OpenAI model on your curated examples. This permanently teaches the model your preferred summarization style — no few-shot examples needed in the prompt afterwards.
+                </p>
+
+                <div class="settings-grid">
+                    <div class="setting-group">
+                        <h4>📋 Training Configuration</h4>
+                        <div class="setting-row">
+                            <span class="setting-label">Base Model</span>
+                            <select id="ftBaseModel" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.5rem;font-size:0.85rem;">
+                                <option value="gpt-4o-mini-2024-07-18">gpt-4o-mini (recommended)</option>
+                                <option value="gpt-4o-2024-08-06">gpt-4o</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Model Suffix</span>
+                            <input type="text" id="ftSuffix" value="medical-summarizer" placeholder="custom name" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.5rem;font-size:0.85rem;width:160px;">
+                        </div>
+                        <div class="setting-row">
+                            <span class="setting-label">Epochs <span class="hint">(training passes)</span></span>
+                        </div>
+                        <div class="range-row">
+                            <input type="range" id="ftEpochs" min="1" max="10" value="3" oninput="document.getElementById('ftEpochs_val').textContent=this.value">
+                            <span class="range-value" id="ftEpochs_val">3</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="ftStatus" style="display:none;margin:1rem 0;padding:0.8rem;border-radius:8px;background:var(--surface2);font-size:0.85rem;">
+                </div>
+
+                <div class="settings-actions" style="gap:0.5rem;">
+                    <button class="btn-reset" onclick="fineTuneExport()" id="ftExportBtn">📥 Export Training Data</button>
+                    <button class="btn-apply" onclick="fineTuneStart()" id="ftStartBtn">🚀 Start Fine-Tuning</button>
+                    <button class="btn-reset" onclick="fineTuneCheckStatus()" id="ftStatusBtn">📊 Check Status</button>
+                </div>
+
+                <div id="ftJobsList" style="display:none;margin-top:1rem;">
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Stats -->
     <div class="stats-bar" id="statsBar">
         <div class="stat-card"><div class="label">Total Documents</div><div class="value blue" id="statTotal">-</div></div>
@@ -2533,6 +2584,145 @@ document.addEventListener('mouseout', e => {
         activeTip = null;
     }
 });
+
+// ── Fine-Tuning ─────────────────────────
+function toggleFineTune() {
+    const panel = document.getElementById('fineTunePanel');
+    panel.classList.toggle('open');
+}
+
+async function fineTuneExport() {
+    const btn = document.getElementById('ftExportBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Exporting…';
+    const statusDiv = document.getElementById('ftStatus');
+    try {
+        const resp = await fetch(apiUrl('fine-tune/export'), { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast('error', 'Export Failed', data.error || 'Unknown error');
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = `<span style="color:#f87171;">❌ ${data.error}</span>`;
+            return;
+        }
+        statusDiv.style.display = 'block';
+        let html = `<span style="color:#4ade80;">✅ Exported ${data.exampleCount} examples</span><br><small style="color:var(--text-dim);">Saved to: ${data.blobPath}</small>`;
+        if (data.warning) html += `<br><small style="color:#fbbf24;">⚠ ${data.warning}</small>`;
+        statusDiv.innerHTML = html;
+        showToast('success', 'Export Complete', `${data.exampleCount} training examples exported.`);
+    } catch (e) {
+        showToast('error', 'Export Failed', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📥 Export Training Data';
+    }
+}
+
+async function fineTuneStart() {
+    if (!confirm('This will start a fine-tuning job on Azure OpenAI. Training may take 30+ minutes and will incur costs. Continue?')) return;
+    const btn = document.getElementById('ftStartBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Starting…';
+    const statusDiv = document.getElementById('ftStatus');
+    try {
+        const body = {
+            model: document.getElementById('ftBaseModel').value,
+            suffix: document.getElementById('ftSuffix').value,
+            nEpochs: parseInt(document.getElementById('ftEpochs').value),
+        };
+        const resp = await fetch(apiUrl('fine-tune/start'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast('error', 'Fine-Tuning Failed', data.error || 'Unknown error');
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = `<span style="color:#f87171;">❌ ${data.error}</span>`;
+            return;
+        }
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = `<span style="color:#4ade80;">🚀 Job started!</span><br><small style="color:var(--text-dim);">Job ID: ${data.jobId} | Status: ${data.status} | Examples: ${data.exampleCount}</small>`;
+        showToast('success', 'Fine-Tuning Started', `Job ${data.jobId} is running with ${data.exampleCount} examples.`);
+    } catch (e) {
+        showToast('error', 'Start Failed', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Start Fine-Tuning';
+    }
+}
+
+async function fineTuneCheckStatus() {
+    const btn = document.getElementById('ftStatusBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Checking…';
+    const jobsDiv = document.getElementById('ftJobsList');
+    try {
+        const resp = await fetch(apiUrl('fine-tune/status'));
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast('error', 'Status Check Failed', data.error || 'Unknown error');
+            return;
+        }
+        const jobs = data.jobs || [];
+        if (!jobs.length) {
+            jobsDiv.style.display = 'block';
+            jobsDiv.innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem;">No fine-tuning jobs found.</p>';
+            return;
+        }
+        jobsDiv.style.display = 'block';
+        let html = '<table style="width:100%;font-size:0.8rem;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid var(--border);">' +
+            '<th style="text-align:left;padding:0.4rem;">Job ID</th>' +
+            '<th style="text-align:left;padding:0.4rem;">Status</th>' +
+            '<th style="text-align:left;padding:0.4rem;">Model</th>' +
+            '<th style="text-align:left;padding:0.4rem;">Examples</th>' +
+            '<th style="text-align:left;padding:0.4rem;">Actions</th>' +
+            '</tr></thead><tbody>';
+        for (const job of jobs) {
+            const statusColor = job.status === 'succeeded' ? '#4ade80' : job.status === 'failed' ? '#f87171' : '#fbbf24';
+            const deployBtn = job.status === 'succeeded' && job.fineTunedModel
+                ? `<button onclick="fineTuneDeploy('${job.fineTunedModel}')" style="font-size:0.75rem;padding:0.2rem 0.5rem;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;">Deploy</button>`
+                : '';
+            html += `<tr style="border-bottom:1px solid var(--border);">`;
+            html += `<td style="padding:0.4rem;font-family:monospace;">${(job.jobId || '').slice(0, 16)}…</td>`;
+            html += `<td style="padding:0.4rem;color:${statusColor};font-weight:600;">${job.status || 'unknown'}</td>`;
+            html += `<td style="padding:0.4rem;">${job.fineTunedModel || job.baseModel || '-'}</td>`;
+            html += `<td style="padding:0.4rem;">${job.exampleCount || '-'}</td>`;
+            html += `<td style="padding:0.4rem;">${deployBtn}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        jobsDiv.innerHTML = html;
+    } catch (e) {
+        showToast('error', 'Status Check Failed', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📊 Check Status';
+    }
+}
+
+async function fineTuneDeploy(model) {
+    if (!confirm(`Deploy fine-tuned model?\n\n${model}\n\nAll future summarizations will use this model.`)) return;
+    try {
+        const resp = await fetch(apiUrl('fine-tune/deploy'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fineTunedModel: model }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast('error', 'Deploy Failed', data.error || 'Unknown error');
+            return;
+        }
+        showToast('success', 'Model Deployed', `Switched from ${data.previousModel} to ${data.activeModel}`);
+        const statusDiv = document.getElementById('ftStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = `<span style="color:#4ade80;">✅ Active model: <strong>${data.activeModel}</strong></span><br><small style="color:var(--text-dim);">Note: Update AZURE_OPENAI_DEPLOYMENT in App Settings for permanent change.</small>`;
+    } catch (e) {
+        showToast('error', 'Deploy Failed', e.message);
+    }
+}
 
 // ── Init ────────────────────────────────
 loadConfig();

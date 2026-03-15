@@ -2633,6 +2633,392 @@ def promote_cors(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Fine-Tuning endpoints
+# ═══════════════════════════════════════════════════════════════════════
+
+def _build_training_jsonl(blob_helper: BlobHelper) -> tuple[str, int]:
+    """Export all few-shot examples as JSONL for Azure OpenAI fine-tuning.
+
+    Each line is a chat-completion training example:
+    {"messages": [{"role":"system","content":"..."},
+                  {"role":"user","content":"..."},
+                  {"role":"assistant","content":"..."}]}
+
+    Returns (jsonl_string, example_count).
+    """
+    import datetime
+
+    container_client = blob_helper._client.get_container_client("artifacts")
+    system_prompt = _load_active_prompt(blob_helper)
+
+    seen_ids: set[str] = set()
+    lines: list[str] = []
+
+    for blob in container_client.list_blobs(name_starts_with="examples/"):
+        parts = blob.name.split("/")
+        if len(parts) >= 3 and parts[2] == "input.txt":
+            eid = parts[1]
+            if eid in seen_ids:
+                continue
+            seen_ids.add(eid)
+            try:
+                input_text = container_client.get_blob_client(
+                    f"examples/{eid}/input.txt"
+                ).download_blob().readall().decode("utf-8")
+
+                summary_text = container_client.get_blob_client(
+                    f"examples/{eid}/summary.txt"
+                ).download_blob().readall().decode("utf-8")
+
+                if not input_text.strip() or not summary_text.strip():
+                    continue
+
+                user_content = (
+                    "Summarize the following OCR-extracted medical document."
+                    " Output language: Hebrew.\n\n---\n\n" + input_text
+                )
+
+                training_example = {
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                        {"role": "assistant", "content": summary_text},
+                    ]
+                }
+                lines.append(json.dumps(training_example, ensure_ascii=False))
+            except Exception:
+                logger.warning("Skipping example %s – failed to load", eid)
+                continue
+
+    return "\n".join(lines), len(lines)
+
+
+@app.route(route="fine-tune/export", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def fine_tune_export(req: func.HttpRequest) -> func.HttpResponse:
+    """Export all examples as JSONL training data and save to blob storage.
+
+    Returns the JSONL content and metadata.  The file is also persisted to
+    ``artifacts/fine-tuning/training-<timestamp>.jsonl`` for auditability.
+    """
+    try:
+        blob_helper = _get_blob_helper()
+        jsonl_content, count = _build_training_jsonl(blob_helper)
+
+        if count == 0:
+            return func.HttpResponse(
+                json.dumps({"error": "No examples found. Add examples first before exporting training data."}),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        if count < 10:
+            logger.warning("Only %d training examples – Azure OpenAI recommends at least 10", count)
+
+        import datetime
+        ts = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        blob_path = f"fine-tuning/training-{ts}.jsonl"
+
+        blob_helper.upload_bytes(
+            jsonl_content.encode("utf-8"),
+            "artifacts",
+            blob_path,
+            content_type="application/jsonl",
+        )
+
+        logger.info("Exported %d training examples to %s", count, blob_path)
+
+        return func.HttpResponse(
+            json.dumps({
+                "exampleCount": count,
+                "blobPath": blob_path,
+                "jsonl": jsonl_content,
+                "warning": "Azure OpenAI recommends at least 10 examples for fine-tuning." if count < 10 else None,
+            }, ensure_ascii=False),
+            status_code=200, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+    except Exception:
+        logger.exception("Failed to export training data")
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to export training data", "detail": traceback.format_exc()}),
+            status_code=500, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+
+@app.route(route="fine-tune/start", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def fine_tune_start(req: func.HttpRequest) -> func.HttpResponse:
+    """Upload training JSONL to Azure OpenAI and start a fine-tuning job.
+
+    Request body (JSON)::
+
+        {
+            "model": "gpt-4o-mini-2024-07-18",  // optional, base model to fine-tune
+            "suffix": "medical-summarizer",       // optional, custom suffix for the model name
+            "nEpochs": 3                          // optional, number of training epochs
+        }
+
+    The endpoint first exports the latest training data, uploads it to
+    Azure OpenAI, then creates a fine-tuning job.
+    """
+    try:
+        body = {}
+        try:
+            body = req.get_json()
+        except ValueError:
+            pass
+
+        blob_helper = _get_blob_helper()
+        jsonl_content, count = _build_training_jsonl(blob_helper)
+
+        if count < 10:
+            return func.HttpResponse(
+                json.dumps({
+                    "error": f"Not enough training examples ({count}). "
+                             "Azure OpenAI requires at least 10 examples for fine-tuning. "
+                             "Add more examples and try again."
+                }),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        from openai import AzureOpenAI
+
+        client = AzureOpenAI(
+            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_key=os.environ["AZURE_OPENAI_KEY"],
+            api_version="2024-08-01-preview",
+        )
+
+        # Upload training file
+        import io
+        training_file = client.files.create(
+            file=io.BytesIO(jsonl_content.encode("utf-8")),
+            purpose="fine-tune",
+        )
+        logger.info("Uploaded training file: %s (%d examples)", training_file.id, count)
+
+        # Start fine-tuning job
+        base_model = body.get("model", "gpt-4o-mini-2024-07-18")
+        suffix = body.get("suffix", "medical-summarizer")
+        n_epochs = body.get("nEpochs", 3)
+
+        hyperparameters = {"n_epochs": n_epochs}
+
+        job = client.fine_tuning.jobs.create(
+            training_file=training_file.id,
+            model=base_model,
+            suffix=suffix,
+            hyperparameters=hyperparameters,
+        )
+
+        # Persist job info to blob storage for tracking
+        import datetime
+        job_info = {
+            "jobId": job.id,
+            "status": job.status,
+            "baseModel": base_model,
+            "suffix": suffix,
+            "nEpochs": n_epochs,
+            "trainingFileId": training_file.id,
+            "exampleCount": count,
+            "createdAt": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+
+        blob_helper.upload_bytes(
+            json.dumps(job_info, indent=2).encode("utf-8"),
+            "artifacts",
+            f"fine-tuning/jobs/{job.id}.json",
+            content_type="application/json",
+        )
+
+        logger.info("Fine-tuning job started: %s (model=%s, examples=%d)", job.id, base_model, count)
+
+        return func.HttpResponse(
+            json.dumps(job_info, ensure_ascii=False),
+            status_code=200, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    except Exception:
+        logger.exception("Failed to start fine-tuning job")
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to start fine-tuning job", "detail": traceback.format_exc()}),
+            status_code=500, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+
+@app.route(route="fine-tune/status", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
+def fine_tune_status(req: func.HttpRequest) -> func.HttpResponse:
+    """Check the status of fine-tuning jobs.
+
+    Query params:
+        jobId (optional) – specific job to check. If omitted, returns all tracked jobs.
+    """
+    try:
+        from openai import AzureOpenAI
+
+        client = AzureOpenAI(
+            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_key=os.environ["AZURE_OPENAI_KEY"],
+            api_version="2024-08-01-preview",
+        )
+
+        job_id = req.params.get("jobId")
+
+        if job_id:
+            # Check specific job
+            job = client.fine_tuning.jobs.retrieve(job_id)
+            result = {
+                "jobId": job.id,
+                "status": job.status,
+                "model": job.model,
+                "fineTunedModel": job.fine_tuned_model,
+                "createdAt": job.created_at,
+                "finishedAt": job.finished_at,
+                "trainedTokens": job.trained_tokens,
+                "error": str(job.error) if job.error else None,
+            }
+        else:
+            # List all tracked jobs from blob storage
+            blob_helper = _get_blob_helper()
+            container_client = blob_helper._client.get_container_client("artifacts")
+            jobs = []
+
+            for blob in container_client.list_blobs(name_starts_with="fine-tuning/jobs/"):
+                try:
+                    stored = json.loads(
+                        container_client.get_blob_client(blob.name).download_blob().readall()
+                    )
+                    # Refresh status from Azure OpenAI
+                    try:
+                        live_job = client.fine_tuning.jobs.retrieve(stored["jobId"])
+                        stored["status"] = live_job.status
+                        stored["fineTunedModel"] = live_job.fine_tuned_model
+                        stored["finishedAt"] = live_job.finished_at
+                        stored["trainedTokens"] = live_job.trained_tokens
+                        stored["error"] = str(live_job.error) if live_job.error else None
+                    except Exception:
+                        stored["status"] = stored.get("status", "unknown")
+                    jobs.append(stored)
+                except Exception:
+                    continue
+
+            jobs.sort(key=lambda j: j.get("createdAt", ""), reverse=True)
+            result = {"jobs": jobs}
+
+        return func.HttpResponse(
+            json.dumps(result, ensure_ascii=False, default=str),
+            status_code=200, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    except Exception:
+        logger.exception("Failed to check fine-tuning status")
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to check fine-tuning status", "detail": traceback.format_exc()}),
+            status_code=500, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+
+@app.route(route="fine-tune/deploy", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def fine_tune_deploy(req: func.HttpRequest) -> func.HttpResponse:
+    """Switch the active summarization model to a fine-tuned model.
+
+    Request body (JSON)::
+
+        {
+            "fineTunedModel": "ft:gpt-4o-mini-2024-07-18:...:medical-summarizer:abc123"
+        }
+
+    This updates the AZURE_OPENAI_DEPLOYMENT environment variable
+    in-process so all subsequent summarization calls use the fine-tuned
+    model.  To make it permanent, also update the App Setting in Azure
+    Portal or via CLI.
+    """
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON body"}),
+            status_code=400, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    fine_tuned_model = body.get("fineTunedModel", "")
+    if not fine_tuned_model:
+        return func.HttpResponse(
+            json.dumps({"error": "fineTunedModel is required"}),
+            status_code=400, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+    previous_model = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    os.environ["AZURE_OPENAI_DEPLOYMENT"] = fine_tuned_model
+
+    # Persist deployment info
+    try:
+        import datetime
+        blob_helper = _get_blob_helper()
+        deploy_info = {
+            "fineTunedModel": fine_tuned_model,
+            "previousModel": previous_model,
+            "deployedAt": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        blob_helper.upload_bytes(
+            json.dumps(deploy_info, indent=2).encode("utf-8"),
+            "artifacts",
+            "fine-tuning/active-deployment.json",
+            content_type="application/json",
+        )
+    except Exception:
+        logger.warning("Could not persist deployment info to blob storage")
+
+    logger.info("Switched model: %s → %s", previous_model, fine_tuned_model)
+
+    return func.HttpResponse(
+        json.dumps({
+            "message": "Model switched successfully",
+            "previousModel": previous_model,
+            "activeModel": fine_tuned_model,
+            "note": "This change is in-process only. Update AZURE_OPENAI_DEPLOYMENT in App Settings for permanent change.",
+        }),
+        status_code=200, mimetype="application/json",
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+
+def _fine_tune_cors_response() -> func.HttpResponse:
+    return func.HttpResponse("", status_code=200, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-functions-key",
+    })
+
+
+@app.route(route="fine-tune/export", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def fine_tune_export_cors(req: func.HttpRequest) -> func.HttpResponse:
+    return _fine_tune_cors_response()
+
+
+@app.route(route="fine-tune/start", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def fine_tune_start_cors(req: func.HttpRequest) -> func.HttpResponse:
+    return _fine_tune_cors_response()
+
+
+@app.route(route="fine-tune/status", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def fine_tune_status_cors(req: func.HttpRequest) -> func.HttpResponse:
+    return _fine_tune_cors_response()
+
+
+@app.route(route="fine-tune/deploy", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def fine_tune_deploy_cors(req: func.HttpRequest) -> func.HttpResponse:
+    return _fine_tune_cors_response()
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Failure monitoring endpoint
 # ═══════════════════════════════════════════════════════════════════════
 

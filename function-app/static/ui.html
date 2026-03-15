@@ -349,5 +349,176 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
       </div>
     </div>
 
+<script>
+// ── Fine-Tuning Widget (injected) ───────────────────────────────────
+(function(){
+  function ftApiUrl(path){
+    const origin=window.location.origin;
+    const base=(!origin.includes("localhost")&&!origin.includes("127.0.0.1"))?origin+"/api":(localStorage.getItem("preocr_base_url")||"");
+    const key=window.__PREOCR_KEY__||localStorage.getItem("preocr_function_key")||"";
+    const sep=path.includes("?")?"&":"?";
+    return key?base+path+sep+"code="+encodeURIComponent(key):base+path;
+  }
+
+  // Inject CSS
+  const style=document.createElement("style");
+  style.textContent=`
+    #ft-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:center;justify-content:center;}
+    #ft-overlay.open{display:flex;}
+    #ft-modal{background:hsl(230 28% 7%);border:1px solid hsl(180 100% 50%/.2);border-radius:12px;width:540px;max-width:92vw;max-height:85vh;overflow-y:auto;box-shadow:0 0 40px hsl(180 100% 50%/.15);padding:0;}
+    #ft-modal h2{margin:0;padding:20px 24px 16px;font-size:16px;font-weight:700;color:hsl(180 100% 50%);border-bottom:1px solid hsl(230 25% 14%);font-family:'Space Grotesk',system-ui,sans-serif;display:flex;align-items:center;gap:8px;}
+    #ft-modal .ft-body{padding:16px 24px 24px;font-family:'Space Grotesk',system-ui,sans-serif;color:hsl(180 20% 92%);}
+    #ft-modal .ft-desc{font-size:13px;color:hsl(220 15% 45%);line-height:1.5;margin:0 0 16px;}
+    .ft-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px;}
+    .ft-row label{font-size:13px;font-weight:500;color:hsl(180 15% 80%);}
+    .ft-row select,.ft-row input[type=text],.ft-row input[type=number]{background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:6px 10px;font-size:13px;font-family:inherit;outline:none;min-width:160px;}
+    .ft-row select:focus,.ft-row input:focus{border-color:hsl(180 100% 50%/.4);}
+    .ft-row input[type=range]{flex:1;accent-color:hsl(180 100% 50%);}
+    .ft-actions{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap;}
+    .ft-btn{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid;font-family:inherit;transition:all .2s;}
+    .ft-btn:disabled{opacity:.5;cursor:not-allowed;}
+    .ft-btn-primary{background:hsl(180 100% 50%);color:hsl(230 30% 4%);border-color:hsl(180 100% 50%);}
+    .ft-btn-primary:hover:not(:disabled){background:hsl(180 100% 60%);}
+    .ft-btn-secondary{background:transparent;color:hsl(180 15% 80%);border-color:hsl(230 25% 14%);}
+    .ft-btn-secondary:hover:not(:disabled){background:hsl(230 25% 12%);border-color:hsl(180 100% 50%/.3);}
+    .ft-btn-danger{background:hsl(0 85% 55%/.15);color:hsl(0 85% 65%);border-color:hsl(0 85% 55%/.3);}
+    .ft-btn-deploy{background:hsl(160 100% 40%/.15);color:hsl(160 100% 50%);border-color:hsl(160 100% 40%/.3);font-size:11px;padding:4px 10px;}
+    .ft-btn-deploy:hover:not(:disabled){background:hsl(160 100% 40%/.3);}
+    .ft-status{margin-top:14px;padding:12px;border-radius:8px;background:hsl(230 25% 12%);font-size:13px;line-height:1.6;display:none;}
+    .ft-jobs{margin-top:16px;display:none;}
+    .ft-jobs table{width:100%;font-size:12px;border-collapse:collapse;font-family:'JetBrains Mono',monospace;}
+    .ft-jobs th,.ft-jobs td{text-align:left;padding:6px 8px;border-bottom:1px solid hsl(230 25% 14%);}
+    .ft-jobs th{color:hsl(220 15% 45%);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+    .ft-close{position:absolute;top:16px;right:16px;background:none;border:none;color:hsl(220 15% 45%);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:4px;}
+    .ft-close:hover{color:hsl(180 20% 92%);background:hsl(230 25% 14%);}
+    #ft-header-btn{display:inline-flex;align-items:center;gap:6px;font-family:'Space Grotesk',system-ui,sans-serif;font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;padding:6px 12px;border-radius:6px;border:1px solid hsl(230 25% 14%);background:transparent;color:hsl(180 15% 80%);cursor:pointer;transition:all .2s;}
+    #ft-header-btn:hover{background:hsl(180 100% 50%/.1);border-color:hsl(180 100% 50%/.3);color:hsl(180 100% 50%);box-shadow:0 0 15px hsl(180 100% 50%/.15);}
+  `;
+  document.head.appendChild(style);
+
+  // Inject modal HTML
+  const overlay=document.createElement("div");
+  overlay.id="ft-overlay";
+  overlay.innerHTML=`
+    <div id="ft-modal" style="position:relative;">
+      <button class="ft-close" onclick="document.getElementById('ft-overlay').classList.remove('open')">&times;</button>
+      <h2>\ud83e\udde0 Fine-Tune Model</h2>
+      <div class="ft-body">
+        <p class="ft-desc">Fine-tune the Azure OpenAI model on your curated examples. This permanently teaches the model your summarization style.</p>
+        <div class="ft-row">
+          <label>Base Model</label>
+          <select id="ftModel"><option value="gpt-4o-mini-2024-07-18">gpt-4o-mini (recommended)</option><option value="gpt-4o-2024-08-06">gpt-4o</option></select>
+        </div>
+        <div class="ft-row">
+          <label>Model Suffix</label>
+          <input type="text" id="ftSuffix" value="medical-summarizer" placeholder="custom name">
+        </div>
+        <div class="ft-row">
+          <label>Epochs</label>
+          <input type="range" id="ftEpochs" min="1" max="10" value="3" oninput="document.getElementById('ftEpochsVal').textContent=this.value">
+          <span id="ftEpochsVal" style="font-family:monospace;font-size:14px;color:hsl(180 100% 50%);min-width:20px;text-align:center;">3</span>
+        </div>
+        <div class="ft-actions">
+          <button class="ft-btn ft-btn-secondary" onclick="ftExport()" id="ftExportBtn">\ud83d\udce5 Export Data</button>
+          <button class="ft-btn ft-btn-primary" onclick="ftStart()" id="ftStartBtn">\ud83d\ude80 Start Fine-Tuning</button>
+          <button class="ft-btn ft-btn-secondary" onclick="ftStatus()" id="ftStatusBtn">\ud83d\udcca Check Status</button>
+        </div>
+        <div class="ft-status" id="ftStatusDiv"></div>
+        <div class="ft-jobs" id="ftJobsDiv"></div>
+      </div>
+    </div>`;
+  overlay.addEventListener("click",function(e){if(e.target===overlay)overlay.classList.remove("open");});
+  document.body.appendChild(overlay);
+
+  // Inject header button (wait for React to render)
+  function injectBtn(){
+    // Find the header bar with the Examples button
+    const btns=document.querySelectorAll("button");
+    let examplesBtn=null;
+    for(const b of btns){
+      if(b.textContent.trim().toLowerCase().includes("examples")&&b.closest("header")){
+        examplesBtn=b;break;
+      }
+    }
+    if(!examplesBtn){setTimeout(injectBtn,500);return;}
+    if(document.getElementById("ft-header-btn"))return;
+    const btn=document.createElement("button");
+    btn.id="ft-header-btn";
+    btn.innerHTML='\ud83e\udde0 Fine-Tune';
+    btn.onclick=function(){document.getElementById("ft-overlay").classList.add("open");};
+    examplesBtn.parentElement.insertBefore(btn,examplesBtn.nextSibling);
+  }
+  setTimeout(injectBtn,800);
+  // Re-inject on navigation
+  new MutationObserver(function(){if(!document.getElementById("ft-header-btn"))setTimeout(injectBtn,300);}).observe(document.body,{childList:true,subtree:true});
+
+  // API functions
+  window.ftExport=async function(){
+    const btn=document.getElementById("ftExportBtn");
+    const sd=document.getElementById("ftStatusDiv");
+    btn.disabled=true;btn.textContent="\u23f3 Exporting\u2026";
+    try{
+      const r=await fetch(ftApiUrl("/fine-tune/export"),{method:"POST"});
+      const d=await r.json();
+      sd.style.display="block";
+      if(!r.ok){sd.innerHTML='<span style="color:#f87171;">\u274c '+((d&&d.error)||"Export failed")+'</span>';return;}
+      let h='<span style="color:#4ade80;">\u2705 Exported '+d.exampleCount+' examples</span><br><span style="color:hsl(220 15% 45%);font-size:12px;">Saved to: '+d.blobPath+'</span>';
+      if(d.warning)h+='<br><span style="color:#fbbf24;">\u26a0\ufe0f '+d.warning+'</span>';
+      sd.innerHTML=h;
+    }catch(e){sd.style.display="block";sd.innerHTML='<span style="color:#f87171;">\u274c '+e.message+'</span>';}
+    finally{btn.disabled=false;btn.textContent="\ud83d\udce5 Export Data";}
+  };
+
+  window.ftStart=async function(){
+    if(!confirm("Start a fine-tuning job on Azure OpenAI?\\nThis may take 30+ minutes and will incur costs."))return;
+    const btn=document.getElementById("ftStartBtn");
+    const sd=document.getElementById("ftStatusDiv");
+    btn.disabled=true;btn.textContent="\u23f3 Starting\u2026";
+    try{
+      const body={model:document.getElementById("ftModel").value,suffix:document.getElementById("ftSuffix").value,nEpochs:parseInt(document.getElementById("ftEpochs").value)};
+      const r=await fetch(ftApiUrl("/fine-tune/start"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const d=await r.json();
+      sd.style.display="block";
+      if(!r.ok){sd.innerHTML='<span style="color:#f87171;">\u274c '+((d&&d.error)||"Start failed")+'</span>';return;}
+      sd.innerHTML='<span style="color:#4ade80;">\ud83d\ude80 Job started!</span><br><span style="color:hsl(220 15% 45%);font-size:12px;">Job ID: '+d.jobId+' | Status: '+d.status+' | Examples: '+d.exampleCount+'</span>';
+    }catch(e){sd.style.display="block";sd.innerHTML='<span style="color:#f87171;">\u274c '+e.message+'</span>';}
+    finally{btn.disabled=false;btn.textContent="\ud83d\ude80 Start Fine-Tuning";}
+  };
+
+  window.ftStatus=async function(){
+    const btn=document.getElementById("ftStatusBtn");
+    const jd=document.getElementById("ftJobsDiv");
+    btn.disabled=true;btn.textContent="\u23f3 Checking\u2026";
+    try{
+      const r=await fetch(ftApiUrl("/fine-tune/status"));
+      const d=await r.json();
+      if(!r.ok){jd.style.display="block";jd.innerHTML='<span style="color:#f87171;">\u274c '+((d&&d.error)||"Failed")+'</span>';return;}
+      const jobs=d.jobs||[];
+      jd.style.display="block";
+      if(!jobs.length){jd.innerHTML='<p style="color:hsl(220 15% 45%);font-size:13px;">No fine-tuning jobs found.</p>';return;}
+      let h='<table><thead><tr><th>Job ID</th><th>Status</th><th>Model</th><th>Examples</th><th></th></tr></thead><tbody>';
+      for(const j of jobs){
+        const sc=j.status==="succeeded"?"#4ade80":j.status==="failed"?"#f87171":"#fbbf24";
+        const db=j.status==="succeeded"&&j.fineTunedModel?'<button class="ft-btn ft-btn-deploy" onclick="ftDeploy(\''+j.fineTunedModel.replace(/'/g,"\\'")+'\')">Deploy</button>':"";
+        h+='<tr><td style="font-family:monospace;">'+(j.jobId||"").slice(0,18)+'\u2026</td><td style="color:'+sc+';font-weight:600;">'+( j.status||"?")+'</td><td>'+(j.fineTunedModel||j.baseModel||"-")+'</td><td>'+(j.exampleCount||"-")+'</td><td>'+db+'</td></tr>';
+      }
+      h+='</tbody></table>';jd.innerHTML=h;
+    }catch(e){jd.style.display="block";jd.innerHTML='<span style="color:#f87171;">\u274c '+e.message+'</span>';}
+    finally{btn.disabled=false;btn.textContent="\ud83d\udcca Check Status";}
+  };
+
+  window.ftDeploy=async function(model){
+    if(!confirm("Deploy this fine-tuned model?\\n\\n"+model+"\\n\\nAll future summarizations will use it."))return;
+    const sd=document.getElementById("ftStatusDiv");
+    try{
+      const r=await fetch(ftApiUrl("/fine-tune/deploy"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fineTunedModel:model})});
+      const d=await r.json();
+      sd.style.display="block";
+      if(!r.ok){sd.innerHTML='<span style="color:#f87171;">\u274c '+((d&&d.error)||"Deploy failed")+'</span>';return;}
+      sd.innerHTML='<span style="color:#4ade80;">\u2705 Active model: <strong>'+d.activeModel+'</strong></span><br><span style="color:hsl(220 15% 45%);font-size:12px;">Switched from '+d.previousModel+'. Update AZURE_OPENAI_DEPLOYMENT in App Settings to make permanent.</span>';
+    }catch(e){sd.style.display="block";sd.innerHTML='<span style="color:#f87171;">\u274c '+e.message+'</span>';}
+  };
+})();
+</script>
   </body>
 </html>
