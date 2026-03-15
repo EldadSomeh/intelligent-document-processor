@@ -49,6 +49,7 @@ The entire pipeline is orchestrated by **Azure Durable Functions** with built-in
 | **Smart Figure Filtering** | Filters out logos and stamps that would unnecessarily trigger Vision model calls |
 | **Parallel Processing** | OCR pages and preprocessing run in parallel for throughput |
 | **Few-Shot Learning** | Curated examples injected into each LLM call for consistent output quality |
+| **Fine-Tuning** | Train a custom Azure OpenAI model on your examples for permanent style learning |
 | **Embedding Re-Ranking** | Examples ranked by semantic similarity using `text-embedding-3-small` vectors |
 | **Quality Metrics** | Blur score, estimated DPI, redaction %, OCR readiness — per page |
 | **Self-Contained UI** | Single-page React dashboard with drag-and-drop upload, pipeline tracking, settings, and document detail views |
@@ -126,6 +127,7 @@ The built-in web UI provides:
 - **Documents table** — sortable list with quality metrics and status badges
 - **Document detail view** — before/after image comparison, quality metrics, enhancement details, region detection, clinical summary, OCR text, extracted tables
 - **Few-shot examples manager** — create, edit, and manage examples for summary tuning
+- **Fine-tuning panel** — export training data, start Azure OpenAI fine-tuning jobs, monitor status, and deploy fine-tuned models
 - **Settings panel** — 18 configurable preprocessing parameters
 
 ---
@@ -177,6 +179,48 @@ File uploaded to "raw" container
 | `activity_preprocess` | 3 | 30s | 2.0× |
 | `activity_ocr` | 2 | 30s | 2.0× |
 | `activity_summarize` | 2 | 10s | 2.0× |
+
+---
+
+## Fine-Tuning
+
+The system supports Azure OpenAI fine-tuning to permanently teach the model your preferred summarization style. This uses the same curated examples from the few-shot examples library as training data.
+
+### How It Works
+
+1. **Curate examples** — Add at least 10 examples via the Examples panel or by promoting good summaries
+2. **Export training data** — Converts all examples to JSONL format (system prompt + input + ideal output)
+3. **Start fine-tuning** — Uploads training data to Azure OpenAI and creates a fine-tuning job
+4. **Monitor progress** — Check job status until training completes
+5. **Deploy** — Switch the active model to the fine-tuned version
+
+### Few-Shot Examples vs. Fine-Tuning
+
+| | Few-Shot Examples | Fine-Tuning |
+|---|---|---|
+| **Where knowledge lives** | In the prompt (temporary) | In the model weights (permanent) |
+| **Cost per API call** | Higher (examples consume tokens) | Lower (no examples needed) |
+| **Change behavior** | Instant — edit examples anytime | Requires retraining |
+| **Minimum examples** | 1+ | 10+ (recommended 50+) |
+
+Both approaches can be used together — few-shot examples reinforce the fine-tuned model's learned patterns.
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/fine-tune/export` | POST | Export all examples as JSONL training data |
+| `/api/fine-tune/start` | POST | Upload training data and start a fine-tuning job |
+| `/api/fine-tune/status` | GET | Check status of all fine-tuning jobs |
+| `/api/fine-tune/deploy` | POST | Switch the active model to a fine-tuned version |
+
+### Configuration
+
+| Parameter | Description |
+|-----------|-------------|
+| `model` | Base model to fine-tune (default: `gpt-4o-mini-2024-07-18`) |
+| `suffix` | Custom name suffix for the fine-tuned model |
+| `nEpochs` | Number of training passes (default: 3, recommended: 2–4) |
 
 ---
 
