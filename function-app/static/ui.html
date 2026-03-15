@@ -432,21 +432,50 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
 
   // Inject header button (wait for React to render)
   function injectBtn(){
-    // Find the header bar with the Examples button
-    const btns=document.querySelectorAll("button");
-    let examplesBtn=null;
-    for(const b of btns){
-      if(b.textContent.trim().toLowerCase().includes("examples")&&b.closest("header")){
-        examplesBtn=b;break;
+    if(document.getElementById("ft-header-btn"))return;
+    // Strategy 1: Find header element, look for flex container with gap-2
+    const header=document.querySelector("header");
+    if(!header){setTimeout(injectBtn,500);return;}
+    // Find the right-side div with buttons (flex items-center gap-2)
+    const containers=header.querySelectorAll("div");
+    let target=null;
+    for(const div of containers){
+      // Look for a div that contains a button and is inside the header's right section
+      const btns=div.querySelectorAll("button");
+      if(btns.length>=1){
+        for(const b of btns){
+          if(b.textContent&&b.textContent.toLowerCase().includes("examples")){
+            target=b.parentElement;
+            break;
+          }
+        }
+      }
+      if(target)break;
+    }
+    // Strategy 2: fallback - find any button with "Examples" text anywhere
+    if(!target){
+      const allBtns=document.querySelectorAll("button");
+      for(const b of allBtns){
+        if(b.textContent&&b.textContent.toLowerCase().includes("examples")){
+          target=b.parentElement;
+          break;
+        }
       }
     }
-    if(!examplesBtn){setTimeout(injectBtn,500);return;}
-    if(document.getElementById("ft-header-btn"))return;
+    // Strategy 3: just append to the header's right side
+    if(!target){
+      const headerInner=header.querySelector("div");
+      if(headerInner){
+        const children=headerInner.children;
+        target=children[children.length-1];
+      }
+    }
+    if(!target){setTimeout(injectBtn,1000);return;}
     const btn=document.createElement("button");
     btn.id="ft-header-btn";
     btn.innerHTML='\ud83e\udde0 Fine-Tune';
     btn.onclick=function(){document.getElementById("ft-overlay").classList.add("open");};
-    examplesBtn.parentElement.insertBefore(btn,examplesBtn.nextSibling);
+    target.appendChild(btn);
   }
   setTimeout(injectBtn,800);
   // Re-inject on navigation
