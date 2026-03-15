@@ -2792,10 +2792,16 @@ def fine_tune_start(req: func.HttpRequest) -> func.HttpResponse:
 
         # Upload training file
         import io
-        training_file = client.files.create(
-            file=("training.jsonl", io.BytesIO(jsonl_content.encode("utf-8")), "application/jsonl"),
-            purpose="fine-tune",
-        )
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False, mode="w", encoding="utf-8")
+        tmp.write(jsonl_content)
+        tmp.close()
+        with open(tmp.name, "rb") as f:
+            training_file = client.files.create(
+                file=f,
+                purpose="fine-tune",
+            )
+        os.unlink(tmp.name)
         logger.info("Uploaded training file: %s (%d examples)", training_file.id, count)
 
         # Start fine-tuning job
