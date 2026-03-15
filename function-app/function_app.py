@@ -2804,6 +2804,27 @@ def fine_tune_start(req: func.HttpRequest) -> func.HttpResponse:
         os.unlink(tmp.name)
         logger.info("Uploaded training file: %s (%d examples)", training_file.id, count)
 
+        # Wait for file import to complete (Azure OpenAI processes async)
+        import time
+        for _wait in range(60):  # up to 60 seconds
+            file_status = client.files.retrieve(training_file.id)
+            if file_status.status == "processed":
+                break
+            if file_status.status in ("error", "deleting", "deleted"):
+                return func.HttpResponse(
+                    json.dumps({"error": f"File processing failed: {file_status.status}"}),
+                    status_code=400, mimetype="application/json",
+                    headers={"Access-Control-Allow-Origin": "*"},
+                )
+            time.sleep(2)
+        else:
+            return func.HttpResponse(
+                json.dumps({"error": "File import timed out. Try again in a minute."}),
+                status_code=408, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        logger.info("Training file processed: %s", training_file.id)
+
         # Start fine-tuning job
         base_model = body.get("model", "gpt-4o-mini-2024-07-18")
         suffix = body.get("suffix", "medical-summarizer")
