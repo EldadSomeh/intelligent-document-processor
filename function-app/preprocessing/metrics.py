@@ -16,12 +16,12 @@ Decision cascade (evaluated top-to-bottom, first match wins):
   6. Otherwise                → run_doc_intel
 
 ocrReadinessScore formula (per page):
-  (0.3 × blur_norm + 0.25 × contrast_norm + 0.25 × dpi_norm + 0.2 × redaction_penalty) × faded_penalty
+  (0.4 × blur_norm + 0.3 × contrast_norm + 0.3 × redaction_penalty) × faded_penalty × dpi_penalty
   where
     blur_norm      = min(blurScore / 500, 1.0)
     contrast_norm  = min(stddev(pixels) / 80, 1.0)
-    dpi_norm       = min(estimatedDpi / 300, 1.0)
     redaction_pen  = max(0, 1 − redactionPercent / 100)
+    dpi_penalty    = 1.0 if DPI ≥ 200, else max(0.25, DPI / 200)
     faded_penalty  = 1.0 (normal) or 0.35–1.0 (if mean > 200 and dark pixels < 5%)
 """
 
@@ -334,13 +334,20 @@ class MetricsCalculator:
           - White pixel dominance: more white pixels = more washed out
         Penalty range is 0.35 (severely faded) to 1.0 (normal).
 
-        DPI contributes as a separate factor: images below 150 DPI are penalized
-        proportionally (e.g., 100 DPI = 0.67 penalty).
+        DPI below 200 applies a multiplier penalty (like faded penalty) that
+        scales the entire score down.  200+ DPI = no penalty, 150 = 0.75×,
+        100 = 0.50×, 50 = 0.25×.
         """
         blur_norm = min(blur / 500.0, 1.0)
         contrast_norm = min(float(np.std(img)) / 80.0, 1.0)
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
-        dpi_norm = min(dpi / 300.0, 1.0)  # 300 DPI = 1.0, 150 = 0.5, 100 = 0.33
+
+        # DPI penalty: low resolution reduces the entire score
+        # 200+ DPI = 1.0 (no penalty), below 200 scales linearly down
+        if dpi >= 200:
+            dpi_penalty = 1.0
+        else:
+            dpi_penalty = max(0.25, dpi / 200.0)  # 150→0.75, 100→0.50, 50→0.25
 
         # Faded-text penalty: washed-out scans with very few dark pixels
         # Uses two signals: high brightness AND low dark-pixel ratio
@@ -362,7 +369,7 @@ class MetricsCalculator:
         else:
             faded_penalty = 1.0
 
-        score = (0.3 * blur_norm + 0.25 * contrast_norm + 0.25 * dpi_norm + 0.2 * redact_penalty) * faded_penalty
+        score = (0.4 * blur_norm + 0.3 * contrast_norm + 0.3 * redact_penalty) * faded_penalty * dpi_penalty
         return round(min(max(score, 0.0), 1.0), 3)
 
     # ── Decision logic ───────────────────────────────────────────────
