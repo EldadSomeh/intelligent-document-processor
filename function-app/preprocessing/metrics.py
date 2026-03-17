@@ -343,11 +343,22 @@ class MetricsCalculator:
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
 
         # DPI penalty: low resolution reduces the entire score
-        # 200+ DPI = 1.0 (no penalty), below 200 scales linearly down
-        if dpi >= 200:
+        # Uses both DPI estimate AND total pixel count for robustness
+        # A good document scan has 200+ DPI and ~5M+ pixels
+        h_px, w_px = img.shape[:2]
+        total_px_count = h_px * w_px
+        expected_px_200dpi = 1700 * 2200  # ~3.7M pixels (letter at 200 DPI)
+
+        if dpi >= 200 and total_px_count >= expected_px_200dpi:
             dpi_penalty = 1.0
         else:
-            dpi_penalty = max(0.25, dpi / 200.0)  # 150→0.75, 100→0.50, 50→0.25
+            # DPI-based penalty
+            dpi_factor = min(dpi / 200.0, 1.0)
+            # Pixel-count-based penalty (independent cross-check)
+            px_factor = min(total_px_count / expected_px_200dpi, 1.0)
+            # Use the lower of the two — catches cases where DPI looks OK
+            # but the image is actually small
+            dpi_penalty = max(0.25, min(dpi_factor, px_factor))
 
         # Faded-text penalty: washed-out scans with very few dark pixels
         # Uses two signals: high brightness AND low dark-pixel ratio
