@@ -16,11 +16,12 @@ Decision cascade (evaluated top-to-bottom, first match wins):
   6. Otherwise                → run_doc_intel
 
 ocrReadinessScore formula (per page):
-  0.4 × blur_norm + 0.3 × contrast_norm + 0.3 × redaction_penalty
+  (0.4 × blur_norm + 0.3 × contrast_norm + 0.3 × redaction_penalty) × faded_penalty
   where
     blur_norm      = min(blurScore / 500, 1.0)
     contrast_norm  = min(stddev(pixels) / 80, 1.0)
     redaction_pen  = max(0, 1 − redactionPercent / 100)
+    faded_penalty  = 1.0 (normal) or 0.5–1.0 (if mean > 200 and dark pixels < 5%)
 """
 
 from __future__ import annotations
@@ -43,6 +44,8 @@ BLUR_WARN_THRESHOLD: float = 120.0       # blur < 120 → warn (50–120 is marg
 REDACTION_WARN_THRESHOLD: float = 40.0   # redaction > 40% → warn
 OCR_WARN_THRESHOLD: float = 0.60         # readiness < 0.60 → warn
 DPI_WARN_THRESHOLD: int = 150            # DPI < 150 → warn
+FADED_BRIGHTNESS_THRESHOLD: float = 200.0  # mean > 200 → faded/washed-out
+FADED_DARK_PIXEL_THRESHOLD: float = 5.0    # dark pixels (<30) < 5% → faded text
 
 # ── Failure code descriptions ────────────────────────────────────────
 FAILURE_DESCRIPTIONS: dict[str, dict] = {
@@ -197,11 +200,18 @@ class MetricsCalculator:
         redact = self._redaction_percent(img)
         readiness = self._ocr_readiness(blur, redact, img)
 
+        # Faded-text metrics for quality warnings
+        mean_brightness = float(np.mean(img))
+        total_pixels = img.size
+        dark_pixel_pct = float(np.sum(img < 30)) / total_pixels * 100.0
+
         return {
             "blurScore": blur,
             "estimatedDpi": dpi,
             "redactionPercent": redact,
             "ocrReadinessScore": readiness,
+            "meanBrightness": round(mean_brightness, 1),
+            "darkPixelPercent": round(dark_pixel_pct, 1),
         }
 
     # ── Aggregate across pages ───────────────────────────────────────
@@ -315,12 +325,29 @@ class MetricsCalculator:
 
     @staticmethod
     def _ocr_readiness(blur: float, redact_pct: float, img: np.ndarray) -> float:
-        """Weighted score in [0, 1] combining sharpness, contrast, and redaction."""
+        """Weighted score in [0, 1] combining sharpness, contrast, redaction, and faded text.
+
+        The faded-text penalty detects washed-out scans where text is light gray
+        on white background.  These score high on blur (sharp edges exist) but
+        are actually hard-to-read.  Detected when mean brightness > 200 AND
+        dark pixels (< 30) represent less than 5% of the image.
+        """
         blur_norm = min(blur / 500.0, 1.0)
         contrast_norm = min(float(np.std(img)) / 80.0, 1.0)
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
 
-        score = 0.4 * blur_norm + 0.3 * contrast_norm + 0.3 * redact_penalty
+        # Faded-text penalty: washed-out scans with very few dark pixels
+        mean_brightness = float(np.mean(img))
+        total_pixels = img.size
+        dark_pixel_pct = float(np.sum(img < 30)) / total_pixels * 100.0
+        if mean_brightness > FADED_BRIGHTNESS_THRESHOLD and dark_pixel_pct < FADED_DARK_PIXEL_THRESHOLD:
+            # Scale penalty by how extreme the fading is
+            fade_severity = min((mean_brightness - FADED_BRIGHTNESS_THRESHOLD) / 55.0, 1.0)
+            faded_penalty = 1.0 - fade_severity * 0.5  # 0.5 to 1.0 multiplier
+        else:
+            faded_penalty = 1.0
+
+        score = (0.4 * blur_norm + 0.3 * contrast_norm + 0.3 * redact_penalty) * faded_penalty
         return round(min(max(score, 0.0), 1.0), 3)
 
     # ── Decision logic ───────────────────────────────────────────────
@@ -435,6 +462,27 @@ class MetricsCalculator:
                            "this typically indicates poor contrast between text and background. "
                            "Consider adjusting the contrast threshold or re-scanning with better lighting.",
                 "metric": "contrast",
+            })
+
+        # Check for faded/washed-out pages
+        faded_pages = [
+            p for p in valid_pages
+            if p.get("meanBrightness", 0) > FADED_BRIGHTNESS_THRESHOLD
+            and p.get("darkPixelPercent", 100) < FADED_DARK_PIXEL_THRESHOLD
+        ]
+        if faded_pages:
+            avg_brightness = float(np.mean([p["meanBrightness"] for p in faded_pages]))
+            warnings.append({
+                "code": "W06",
+                "severity": "high",
+                "title": "Faded / Washed-Out Document",
+                "message": f"The document appears faded or washed-out (mean brightness {avg_brightness:.0f}, "
+                           f"very few dark pixels). Text may be light gray on white background, "
+                           f"making OCR extraction unreliable despite high blur scores. "
+                           f"Consider re-scanning with better contrast or adjusting scanner brightness.",
+                "metric": "meanBrightness",
+                "value": round(avg_brightness, 1),
+                "threshold": FADED_BRIGHTNESS_THRESHOLD,
             })
 
         return warnings

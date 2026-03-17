@@ -534,13 +534,20 @@ class ImageProcessor:
         h, w = gray.shape[:2]
         max_dim = max(h, w)
 
+        # Faded-text detection: washed-out scans with very few dark pixels
+        total_pixels = gray.size
+        dark_pixel_pct = float(np.sum(gray < 30)) / total_pixels * 100.0
+        is_faded = mean_brightness > 200.0 and dark_pixel_pct < 5.0
+
         return {
             "mean_brightness": mean_brightness,
             "contrast": contrast,
             "noise_est": noise_est,
             "skew_angle": skew_angle,
             "max_dim": max_dim,
+            "dark_pixel_pct": round(dark_pixel_pct, 1),
             "is_dark": mean_brightness < self._dark_threshold,
+            "is_faded": is_faded,
             "is_noisy": noise_est > self._noise_threshold,
             "is_low_contrast": contrast < self._contrast_threshold,
             "is_skewed": self._skew_min_angle < abs(skew_angle) < self._skew_max_angle,
