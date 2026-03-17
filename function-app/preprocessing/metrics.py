@@ -329,21 +329,32 @@ class MetricsCalculator:
 
         The faded-text penalty detects washed-out scans where text is light gray
         on white background.  These score high on blur (sharp edges exist) but
-        are actually hard-to-read.  Detected when mean brightness > 200 AND
-        dark pixels (< 30) represent less than 5% of the image.
+        are actually hard-to-read.  Uses two signals:
+          - Dark pixel ratio: fewer dark pixels = more faded
+          - White pixel dominance: more white pixels = more washed out
+        Penalty range is 0.35 (severely faded) to 1.0 (normal).
         """
         blur_norm = min(blur / 500.0, 1.0)
         contrast_norm = min(float(np.std(img)) / 80.0, 1.0)
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
 
         # Faded-text penalty: washed-out scans with very few dark pixels
+        # Uses two signals: high brightness AND low dark-pixel ratio
         mean_brightness = float(np.mean(img))
         total_pixels = img.size
         dark_pixel_pct = float(np.sum(img < 30)) / total_pixels * 100.0
+        white_pixel_pct = float(np.sum(img > 230)) / total_pixels * 100.0
+
         if mean_brightness > FADED_BRIGHTNESS_THRESHOLD and dark_pixel_pct < FADED_DARK_PIXEL_THRESHOLD:
-            # Scale penalty by how extreme the fading is
-            fade_severity = min((mean_brightness - FADED_BRIGHTNESS_THRESHOLD) / 55.0, 1.0)
-            faded_penalty = 1.0 - fade_severity * 0.5  # 0.5 to 1.0 multiplier
+            # Primary signal: how few dark (text) pixels exist
+            # 5% dark = mild fade, 1% dark = severe fade, 0% = blank
+            dark_severity = 1.0 - min(dark_pixel_pct / FADED_DARK_PIXEL_THRESHOLD, 1.0)
+            # Secondary signal: how white-dominated the page is
+            white_severity = min(white_pixel_pct / 60.0, 1.0)  # 60%+ white = max
+            # Combined: use the stronger of the two signals
+            fade_severity = max(dark_severity, white_severity)
+            # Penalty range: 0.35 (severely faded) to 0.90 (mildly faded)
+            faded_penalty = max(0.35, 1.0 - fade_severity * 0.65)
         else:
             faded_penalty = 1.0
 
