@@ -16,12 +16,13 @@ Decision cascade (evaluated top-to-bottom, first match wins):
   6. Otherwise                → run_doc_intel
 
 ocrReadinessScore formula (per page):
-  (0.4 × blur_norm + 0.3 × contrast_norm + 0.3 × redaction_penalty) × faded_penalty
+  (0.3 × blur_norm + 0.25 × contrast_norm + 0.25 × dpi_norm + 0.2 × redaction_penalty) × faded_penalty
   where
     blur_norm      = min(blurScore / 500, 1.0)
     contrast_norm  = min(stddev(pixels) / 80, 1.0)
+    dpi_norm       = min(estimatedDpi / 300, 1.0)
     redaction_pen  = max(0, 1 − redactionPercent / 100)
-    faded_penalty  = 1.0 (normal) or 0.5–1.0 (if mean > 200 and dark pixels < 5%)
+    faded_penalty  = 1.0 (normal) or 0.35–1.0 (if mean > 200 and dark pixels < 5%)
 """
 
 from __future__ import annotations
@@ -154,7 +155,7 @@ class MetricsCalculator:
         blur = self._blur_score(img)
         dpi = self._estimated_dpi(img)
         redact = self._redaction_percent(img)
-        readiness = self._ocr_readiness(blur, redact, img)
+        readiness = self._ocr_readiness(blur, redact, img, dpi)
         contrast = float(np.std(img))
 
         metrics = {
@@ -198,7 +199,7 @@ class MetricsCalculator:
         blur = self._blur_score(img)
         dpi = self._estimated_dpi(img)
         redact = self._redaction_percent(img)
-        readiness = self._ocr_readiness(blur, redact, img)
+        readiness = self._ocr_readiness(blur, redact, img, dpi)
 
         # Faded-text metrics for quality warnings
         mean_brightness = float(np.mean(img))
@@ -324,19 +325,22 @@ class MetricsCalculator:
         return round(redacted_px / total_px * 100, 2)
 
     @staticmethod
-    def _ocr_readiness(blur: float, redact_pct: float, img: np.ndarray) -> float:
-        """Weighted score in [0, 1] combining sharpness, contrast, redaction, and faded text.
+    def _ocr_readiness(blur: float, redact_pct: float, img: np.ndarray, dpi: int = 300) -> float:
+        """Weighted score in [0, 1] combining sharpness, contrast, redaction, DPI, and faded text.
 
         The faded-text penalty detects washed-out scans where text is light gray
-        on white background.  These score high on blur (sharp edges exist) but
-        are actually hard-to-read.  Uses two signals:
+        on white background.  Uses two signals:
           - Dark pixel ratio: fewer dark pixels = more faded
           - White pixel dominance: more white pixels = more washed out
         Penalty range is 0.35 (severely faded) to 1.0 (normal).
+
+        DPI contributes as a separate factor: images below 150 DPI are penalized
+        proportionally (e.g., 100 DPI = 0.67 penalty).
         """
         blur_norm = min(blur / 500.0, 1.0)
         contrast_norm = min(float(np.std(img)) / 80.0, 1.0)
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
+        dpi_norm = min(dpi / 300.0, 1.0)  # 300 DPI = 1.0, 150 = 0.5, 100 = 0.33
 
         # Faded-text penalty: washed-out scans with very few dark pixels
         # Uses two signals: high brightness AND low dark-pixel ratio
@@ -358,7 +362,7 @@ class MetricsCalculator:
         else:
             faded_penalty = 1.0
 
-        score = (0.4 * blur_norm + 0.3 * contrast_norm + 0.3 * redact_penalty) * faded_penalty
+        score = (0.3 * blur_norm + 0.25 * contrast_norm + 0.25 * dpi_norm + 0.2 * redact_penalty) * faded_penalty
         return round(min(max(score, 0.0), 1.0), 3)
 
     # ── Decision logic ───────────────────────────────────────────────
