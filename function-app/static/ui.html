@@ -392,6 +392,7 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
     .ft-close{position:absolute;top:16px;right:16px;background:none;border:none;color:hsl(220 15% 45%);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:4px;}
     .ft-close:hover{color:hsl(180 20% 92%);background:hsl(230 25% 14%);}
     #ft-header-btn{cursor:pointer;}
+    #ft-header-btn:hover{box-shadow:0 0 15px hsl(180 100% 50%/.2);border-color:hsl(180 100% 50%/.5) !important;}
   `;
   document.head.appendChild(style);
 
@@ -404,6 +405,35 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
       <h2>Fine-Tune Model</h2>
       <div class="ft-body">
         <p class="ft-desc">Fine-tune the Azure OpenAI model on your curated examples. This permanently teaches the model your summarization style.</p>
+
+        <div style="border:1px solid hsl(180 100% 50%/.15);border-radius:8px;padding:14px 16px;margin-bottom:16px;background:hsl(230 30% 6%);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <label style="font-size:13px;font-weight:600;color:hsl(180 100% 50%);letter-spacing:.03em;">Add Custom Training Example</label>
+            <button class="ft-btn ft-btn-secondary" onclick="ftToggleManual()" id="ftManualToggle" style="font-size:11px;padding:4px 10px;">Show</button>
+          </div>
+          <div id="ftManualSection" style="display:none;">
+            <p style="font-size:11px;color:hsl(220 15% 45%);margin:0 0 10px;line-height:1.4;">Paste an input document text and its ideal summary to add directly as a training example — no document processing needed.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:11px;color:hsl(180 15% 80%);display:block;margin-bottom:4px;">Input Text (OCR / document content)</label>
+                <textarea id="ftManualInput" rows="6" style="width:100%;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:8px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;" placeholder="Paste document text here..."></textarea>
+              </div>
+              <div>
+                <label style="font-size:11px;color:hsl(180 15% 80%);display:block;margin-bottom:4px;">Ideal Summary</label>
+                <textarea id="ftManualSummary" rows="6" style="width:100%;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:8px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;" placeholder="Paste the ideal summary here..."></textarea>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+              <select id="ftManualType" style="background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:4px 8px;font-size:12px;">
+                <option value="general">general</option><option value="recruitment">recruitment</option><option value="cardiology">cardiology</option><option value="orthopedics">orthopedics</option><option value="psychiatry">psychiatry</option><option value="lab_results">lab results</option><option value="imaging">imaging</option><option value="surgery">surgery</option><option value="discharge">discharge</option><option value="referral">referral</option><option value="prescription">prescription</option><option value="other">other</option>
+              </select>
+              <input type="text" id="ftManualDesc" placeholder="Description (optional)" style="flex:1;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:4px 8px;font-size:12px;min-width:140px;">
+              <label style="font-size:11px;color:hsl(180 15% 80%);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="ftManualGolden" checked> Golden</label>
+              <button class="ft-btn ft-btn-primary" onclick="ftAddManualExample()" id="ftManualAddBtn" style="font-size:11px;padding:5px 12px;">Add Example</button>
+            </div>
+            <div id="ftManualStatus" style="display:none;font-size:12px;margin-top:6px;"></div>
+          </div>
+        </div>
         <div class="ft-row">
           <label>Base Model</label>
           <select id="ftModel"><option value="gpt-4o-mini-2024-07-18">gpt-4o-mini (recommended)</option><option value="gpt-4o-2024-08-06">gpt-4o</option></select>
@@ -480,6 +510,35 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
   setTimeout(injectBtn,800);
   // Re-inject on navigation
   new MutationObserver(function(){if(!document.getElementById("ft-header-btn"))setTimeout(injectBtn,300);}).observe(document.body,{childList:true,subtree:true});
+
+  window.ftToggleManual=function(){
+    const sec=document.getElementById('ftManualSection');
+    const btn=document.getElementById('ftManualToggle');
+    if(sec.style.display==='none'){sec.style.display='block';btn.textContent='Hide';}else{sec.style.display='none';btn.textContent='Show';}
+  };
+
+  window.ftAddManualExample=async function(){
+    const input=document.getElementById('ftManualInput').value.trim();
+    const summary=document.getElementById('ftManualSummary').value.trim();
+    const docType=document.getElementById('ftManualType').value;
+    const desc=document.getElementById('ftManualDesc').value.trim();
+    const golden=document.getElementById('ftManualGolden').checked;
+    const ms=document.getElementById('ftManualStatus');
+    const btn=document.getElementById('ftManualAddBtn');
+    if(!input||!summary){ms.style.display='block';ms.innerHTML='<span style="color:#f87171;">Both input text and ideal summary are required.</span>';return;}
+    btn.disabled=true;btn.textContent='Adding...';
+    try{
+      const r=await fetch(ftApiUrl('/examples'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({inputText:input,idealSummary:summary,category:docType,description:desc||'Manual fine-tune example',documentType:docType,isGolden:golden,tags:['manual','fine-tune']})});
+      const d=await r.json();
+      ms.style.display='block';
+      if(!r.ok){ms.innerHTML='<span style="color:#f87171;">'+(d.error||'Failed to add example')+'</span>';return;}
+      ms.innerHTML='<span style="color:#4ade80;">Example added successfully!</span>';
+      document.getElementById('ftManualInput').value='';
+      document.getElementById('ftManualSummary').value='';
+      document.getElementById('ftManualDesc').value='';
+    }catch(e){ms.style.display='block';ms.innerHTML='<span style="color:#f87171;">'+e.message+'</span>';}
+    finally{btn.disabled=false;btn.textContent='Add Example';}
+  };
 
   // API functions
   window.ftExport=async function(){
