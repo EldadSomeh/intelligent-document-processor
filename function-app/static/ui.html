@@ -412,15 +412,29 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
             <button class="ft-btn ft-btn-secondary" onclick="ftToggleManual()" id="ftManualToggle" style="font-size:11px;padding:4px 10px;">Show</button>
           </div>
           <div id="ftManualSection" style="display:none;">
-            <p style="font-size:11px;color:hsl(220 15% 45%);margin:0 0 10px;line-height:1.4;">Paste an input document text and its ideal summary to add directly as a training example — no document processing needed.</p>
+            <p style="font-size:11px;color:hsl(220 15% 45%);margin:0 0 10px;line-height:1.4;">Upload a document file and its ideal summary to add as a training example — no processing pipeline needed.</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
               <div>
-                <label style="font-size:11px;color:hsl(180 15% 80%);display:block;margin-bottom:4px;">Input Text (OCR / document content)</label>
-                <textarea id="ftManualInput" rows="6" style="width:100%;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:8px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;" placeholder="Paste document text here..."></textarea>
+                <label style="font-size:11px;color:hsl(180 15% 80%);display:block;margin-bottom:4px;">Input Document</label>
+                <div id="ftFileDropZone" style="border:2px dashed hsl(230 25% 20%);border-radius:6px;padding:12px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:hsl(230 25% 10%);" onclick="document.getElementById('ftFileInput').click()">
+                  <input type="file" id="ftFileInput" accept=".txt,.pdf,.jpg,.jpeg,.png,.tiff,.tif,.bmp,.webp,.doc,.docx" style="display:none;" onchange="ftHandleFile(this)">
+                  <p id="ftFileName" style="font-size:12px;color:hsl(180 15% 80%);margin:0;">Drop file here or click to browse</p>
+                  <p style="font-size:10px;color:hsl(220 15% 45%);margin:4px 0 0;">Supports: PDF, images, text, Word docs</p>
+                </div>
+                <div style="margin-top:6px;">
+                  <label style="font-size:10px;color:hsl(220 15% 45%);display:block;margin-bottom:2px;">Or paste text directly:</label>
+                  <textarea id="ftManualInput" rows="4" style="width:100%;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:8px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;" placeholder="Paste document text here..."></textarea>
+                </div>
               </div>
               <div>
                 <label style="font-size:11px;color:hsl(180 15% 80%);display:block;margin-bottom:4px;">Ideal Summary</label>
-                <textarea id="ftManualSummary" rows="6" style="width:100%;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:8px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;" placeholder="Paste the ideal summary here..."></textarea>
+                <div style="margin-bottom:6px;">
+                  <div id="ftSummaryDropZone" style="border:2px dashed hsl(230 25% 20%);border-radius:6px;padding:12px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:hsl(230 25% 10%);" onclick="document.getElementById('ftSummaryFileInput').click()">
+                    <input type="file" id="ftSummaryFileInput" accept=".txt,.doc,.docx" style="display:none;" onchange="ftHandleSummaryFile(this)">
+                    <p id="ftSummaryFileName" style="font-size:12px;color:hsl(180 15% 80%);margin:0;">Upload summary file or type below</p>
+                  </div>
+                </div>
+                <textarea id="ftManualSummary" rows="4" style="width:100%;background:hsl(230 25% 12%);color:hsl(180 20% 92%);border:1px solid hsl(230 25% 14%);border-radius:6px;padding:8px;font-size:12px;font-family:'JetBrains Mono',monospace;resize:vertical;" placeholder="Paste or type the ideal summary here..."></textarea>
               </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
@@ -515,6 +529,91 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
     const sec=document.getElementById('ftManualSection');
     const btn=document.getElementById('ftManualToggle');
     if(sec.style.display==='none'){sec.style.display='block';btn.textContent='Hide';}else{sec.style.display='none';btn.textContent='Show';}
+  };
+
+  // File drag & drop setup
+  function ftSetupDropZone(zoneId,inputId,cb){
+    const zone=document.getElementById(zoneId);
+    if(!zone)return;
+    zone.addEventListener('dragover',function(e){e.preventDefault();zone.style.borderColor='hsl(180 100% 50%/.5)';zone.style.background='hsl(230 25% 14%)';});
+    zone.addEventListener('dragleave',function(){zone.style.borderColor='hsl(230 25% 20%)';zone.style.background='hsl(230 25% 10%)';});
+    zone.addEventListener('drop',function(e){e.preventDefault();zone.style.borderColor='hsl(230 25% 20%)';zone.style.background='hsl(230 25% 10%)';if(e.dataTransfer.files.length>0)cb(e.dataTransfer.files[0]);});
+  }
+  setTimeout(function(){
+    ftSetupDropZone('ftFileDropZone','ftFileInput',function(f){document.getElementById('ftFileInput').files=new DataTransfer().files;ftProcessFile(f,'ftManualInput','ftFileName');});
+    ftSetupDropZone('ftSummaryDropZone','ftSummaryFileInput',function(f){ftProcessFile(f,'ftManualSummary','ftSummaryFileName');});
+  },1000);
+
+  function ftProcessFile(file,targetId,labelId){
+    const label=document.getElementById(labelId);
+    const target=document.getElementById(targetId);
+    label.textContent='Loading: '+file.name+'...';
+    label.style.color='hsl(180 100% 50%)';
+    const ext=file.name.split('.').pop().toLowerCase();
+    if(ext==='txt'){
+      const reader=new FileReader();
+      reader.onload=function(e){target.value=e.target.result;label.textContent=file.name+' (loaded)';};
+      reader.readAsText(file);
+    } else if(['jpg','jpeg','png','bmp','webp','tiff','tif'].includes(ext)){
+      // For images, we can't extract text client-side — upload to OCR endpoint
+      label.textContent=file.name+' — sending to OCR...';
+      const formData=new FormData();
+      formData.append('file',file);
+      formData.append('settings',JSON.stringify({skipSummarize:true}));
+      fetch(ftApiUrl('/upload'),{method:'POST',body:formData}).then(r=>r.json()).then(d=>{
+        if(d.docId){
+          label.textContent=file.name+' — waiting for OCR...';
+          ftPollOcr(d.docId,target,label,file.name);
+        } else {
+          label.textContent=file.name+' — upload failed';label.style.color='#f87171';
+        }
+      }).catch(e=>{label.textContent='Error: '+e.message;label.style.color='#f87171';});
+    } else if(ext==='pdf'){
+      label.textContent=file.name+' — sending to OCR...';
+      const formData=new FormData();
+      formData.append('file',file);
+      formData.append('settings',JSON.stringify({skipSummarize:true}));
+      fetch(ftApiUrl('/upload'),{method:'POST',body:formData}).then(r=>r.json()).then(d=>{
+        if(d.docId){
+          label.textContent=file.name+' — waiting for OCR...';
+          ftPollOcr(d.docId,target,label,file.name);
+        } else {
+          label.textContent=file.name+' — upload failed';label.style.color='#f87171';
+        }
+      }).catch(e=>{label.textContent='Error: '+e.message;label.style.color='#f87171';});
+    } else {
+      // Try as text
+      const reader=new FileReader();
+      reader.onload=function(e){target.value=e.target.result;label.textContent=file.name+' (loaded)';};
+      reader.readAsText(file);
+    }
+  }
+
+  function ftPollOcr(docId,target,label,fileName){
+    let attempts=0;
+    const poll=setInterval(function(){
+      attempts++;
+      if(attempts>60){clearInterval(poll);label.textContent=fileName+' — OCR timeout';label.style.color='#f87171';return;}
+      fetch(ftApiUrl('/documents/'+docId)).then(r=>r.json()).then(d=>{
+        if(d.ocr && d.ocr.analyzeResult && d.ocr.analyzeResult.content){
+          clearInterval(poll);
+          target.value=d.ocr.analyzeResult.content;
+          label.textContent=fileName+' (OCR extracted)';
+          label.style.color='#4ade80';
+        } else if(d.failure){
+          clearInterval(poll);
+          label.textContent=fileName+' — processing failed';
+          label.style.color='#f87171';
+        }
+      }).catch(function(){});
+    },3000);
+  }
+
+  window.ftHandleFile=function(input){
+    if(input.files&&input.files[0])ftProcessFile(input.files[0],'ftManualInput','ftFileName');
+  };
+  window.ftHandleSummaryFile=function(input){
+    if(input.files&&input.files[0])ftProcessFile(input.files[0],'ftManualSummary','ftSummaryFileName');
   };
 
   window.ftAddManualExample=async function(){
