@@ -190,7 +190,12 @@ class MetricsCalculator:
     # ── Per-page ─────────────────────────────────────────────────────
 
     def calculate(self, enhanced_path: str, original_path: str) -> dict:
-        """Return a dict of quality metrics for *enhanced_path*."""
+        """Return a dict of quality metrics for *enhanced_path*.
+
+        Uses the *original* image dimensions for DPI estimation so that
+        upscaling doesn't inflate the readiness score — upscaled pixels
+        are interpolated, not real additional detail.
+        """
         img = cv2.imread(enhanced_path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             logger.warning("Cannot read enhanced image %s – marking F07", enhanced_path)
@@ -199,7 +204,16 @@ class MetricsCalculator:
         blur = self._blur_score(img)
         dpi = self._estimated_dpi(img)
         redact = self._redaction_percent(img)
-        readiness = self._ocr_readiness(blur, redact, img, dpi)
+
+        # Use ORIGINAL image dimensions for DPI to prevent upscaling
+        # from inflating the readiness score
+        original_dpi = dpi
+        if original_path:
+            orig_img = cv2.imread(original_path, cv2.IMREAD_GRAYSCALE)
+            if orig_img is not None:
+                original_dpi = self._estimated_dpi(orig_img)
+
+        readiness = self._ocr_readiness(blur, redact, img, original_dpi)
 
         # Faded-text metrics for quality warnings
         mean_brightness = float(np.mean(img))
@@ -343,22 +357,12 @@ class MetricsCalculator:
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
 
         # DPI penalty: low resolution reduces the entire score
-        # Uses both DPI estimate AND total pixel count for robustness
-        # A good document scan has 200+ DPI and ~5M+ pixels
-        h_px, w_px = img.shape[:2]
-        total_px_count = h_px * w_px
-        expected_px_200dpi = 1700 * 2200  # ~3.7M pixels (letter at 200 DPI)
-
-        if dpi >= 200 and total_px_count >= expected_px_200dpi:
+        # The dpi parameter should be from the ORIGINAL image (before upscaling)
+        # so that artificial upscaling doesn't inflate the score
+        if dpi >= 200:
             dpi_penalty = 1.0
         else:
-            # DPI-based penalty
-            dpi_factor = min(dpi / 200.0, 1.0)
-            # Pixel-count-based penalty (independent cross-check)
-            px_factor = min(total_px_count / expected_px_200dpi, 1.0)
-            # Use the lower of the two — catches cases where DPI looks OK
-            # but the image is actually small
-            dpi_penalty = max(0.25, min(dpi_factor, px_factor))
+            dpi_penalty = max(0.25, dpi / 200.0)
 
         # Faded-text penalty: washed-out scans with very few dark pixels
         # Uses two signals: high brightness AND low dark-pixel ratio
