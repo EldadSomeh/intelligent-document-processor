@@ -21,7 +21,7 @@ ocrReadinessScore formula (per page):
     blur_norm      = min(blurScore / 500, 1.0)
     contrast_norm  = min(stddev(pixels) / 80, 1.0)
     redaction_pen  = max(0, 1 − redactionPercent / 100)
-    dpi_penalty    = 1.0 if DPI ≥ 200, else max(0.25, DPI / 200)
+    dpi_penalty    = 1.0 if DPI ≥ 200, else max(0.03, (DPI/200)^5)
     faded_penalty  = 1.0 (normal) or 0.35–1.0 (if mean > 200 and dark pixels < 5%)
 """
 
@@ -356,13 +356,20 @@ class MetricsCalculator:
         contrast_norm = min(float(np.std(img)) / 80.0, 1.0)
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
 
-        # DPI penalty: low resolution reduces the entire score
+        # DPI penalty: low resolution aggressively reduces the entire score
+        # Uses exponential penalty so low-DPI images (phone photos, screenshots)
+        # score very low, reflecting that OCR will struggle with small text.
         # The dpi parameter should be from the ORIGINAL image (before upscaling)
-        # so that artificial upscaling doesn't inflate the score
+        # so that artificial upscaling doesn't inflate the score.
+        #   DPI 200+ → 1.0 (no penalty)
+        #   DPI 180  → 0.59
+        #   DPI 150  → 0.24
+        #   DPI 145  → 0.20
+        #   DPI 100  → 0.03
         if dpi >= 200:
             dpi_penalty = 1.0
         else:
-            dpi_penalty = max(0.25, dpi / 200.0)
+            dpi_penalty = max(0.03, (dpi / 200.0) ** 5)
 
         # Faded-text penalty: washed-out scans with very few dark pixels
         # Uses two signals: high brightness AND low dark-pixel ratio
