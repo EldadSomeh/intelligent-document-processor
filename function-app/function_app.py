@@ -2633,6 +2633,180 @@ def promote_cors(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Upload-based example creation (drag-and-drop files)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _extract_text_from_file(file_bytes: bytes, filename: str) -> str:
+    """Extract plain text from an uploaded file (TXT, DOCX, or text-based PDF)."""
+    name_lower = filename.lower()
+
+    if name_lower.endswith(".txt") or name_lower.endswith(".md"):
+        return file_bytes.decode("utf-8", errors="replace")
+
+    if name_lower.endswith(".docx"):
+        import io
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument(io.BytesIO(file_bytes))
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        # Also extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if cells:
+                    paragraphs.append(" | ".join(cells))
+        return "\n".join(paragraphs)
+
+    if name_lower.endswith(".pdf"):
+        import io
+        from PyPDF2 import PdfReader
+
+        reader = PdfReader(io.BytesIO(file_bytes))
+        pages_text = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text and text.strip():
+                pages_text.append(text.strip())
+        if pages_text:
+            return "\n\n".join(pages_text)
+        return ""
+
+    raise ValueError(f"Unsupported file type: {filename}. Use .txt, .docx, or .pdf")
+
+
+@app.route(route="examples/upload", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def create_example_upload(req: func.HttpRequest) -> func.HttpResponse:
+    """Create a new few-shot example from uploaded files (drag-and-drop).
+
+    Accepts multipart/form-data with:
+      - inputFile: TXT, DOCX, or text-based PDF (the raw document)
+      - summaryFile: TXT or DOCX (the doctor's ideal summary)
+      - documentType (form field, optional)
+      - description (form field, optional)
+      - isGolden (form field, optional, "true"/"false")
+      - tags (form field, optional, comma-separated)
+    """
+    try:
+        input_file = req.files.get("inputFile")
+        summary_file = req.files.get("summaryFile")
+
+        if not input_file or not summary_file:
+            return func.HttpResponse(
+                json.dumps({"error": "Both inputFile and summaryFile are required"}),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        # Extract text from uploaded files
+        try:
+            input_text = _extract_text_from_file(
+                input_file.read(), input_file.filename or "input.txt"
+            )
+        except ValueError as e:
+            return func.HttpResponse(
+                json.dumps({"error": f"Input file error: {e}"}),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        try:
+            ideal_summary = _extract_text_from_file(
+                summary_file.read(), summary_file.filename or "summary.txt"
+            )
+        except ValueError as e:
+            return func.HttpResponse(
+                json.dumps({"error": f"Summary file error: {e}"}),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        if not input_text.strip():
+            return func.HttpResponse(
+                json.dumps({"error": "Input file contains no extractable text. For scanned PDFs, process through the pipeline first."}),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        if not ideal_summary.strip():
+            return func.HttpResponse(
+                json.dumps({"error": "Summary file contains no extractable text"}),
+                status_code=400, mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+
+        # Read metadata from form fields
+        document_type = req.form.get("documentType", "general")
+        description = req.form.get("description", "")
+        is_golden = req.form.get("isGolden", "false").lower() == "true"
+        tags_raw = req.form.get("tags", "")
+        tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
+
+        # Create example (same storage format as create_example)
+        example_id = f"ex-{uuid.uuid4().hex[:8]}"
+        blob_helper = _get_blob_helper()
+
+        blob_helper.upload_bytes(
+            input_text.encode("utf-8"), "artifacts",
+            f"examples/{example_id}/input.txt", content_type="text/plain",
+        )
+        blob_helper.upload_bytes(
+            ideal_summary.encode("utf-8"), "artifacts",
+            f"examples/{example_id}/summary.txt", content_type="text/plain",
+        )
+
+        _store_example_embedding(blob_helper, example_id, input_text)
+
+        import datetime
+        metadata = {
+            "exampleId": example_id,
+            "category": document_type,
+            "documentType": document_type,
+            "description": description,
+            "isGolden": is_golden,
+            "tags": tags,
+            "inputLength": len(input_text),
+            "summaryLength": len(ideal_summary),
+            "sourceInputFile": input_file.filename,
+            "sourceSummaryFile": summary_file.filename,
+            "createdAt": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        blob_helper.upload_bytes(
+            json.dumps(metadata, indent=2, ensure_ascii=False).encode("utf-8"),
+            "artifacts",
+            f"examples/{example_id}/metadata.json",
+            content_type="application/json",
+        )
+
+        logger.info(
+            "Created example %s from uploaded files (%s + %s)",
+            example_id, input_file.filename, summary_file.filename,
+        )
+
+        return func.HttpResponse(
+            json.dumps({"success": True, **metadata}),
+            status_code=201, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+    except Exception:
+        logger.exception("Error creating example from file upload")
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to create example from uploaded files"}),
+            status_code=500, mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+
+
+@app.route(route="examples/upload", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def examples_upload_cors(req: func.HttpRequest) -> func.HttpResponse:
+    return func.HttpResponse("", status_code=200, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-functions-key",
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Fine-Tuning endpoints
 # ═══════════════════════════════════════════════════════════════════════
 

@@ -126,7 +126,7 @@ The built-in web UI provides:
 - **Real-time pipeline tracker** — 4-step progress (Upload → Preprocess → OCR → Summary)
 - **Documents table** — sortable list with quality metrics and status badges
 - **Document detail view** — before/after image comparison, quality metrics, enhancement details, region detection, clinical summary, OCR text, extracted tables
-- **Few-shot examples manager** — create, edit, and manage examples for summary tuning
+- **Few-shot examples manager** — create, edit, and manage examples for summary tuning. Supports drag-and-drop file upload (TXT, DOCX, PDF) or paste text
 - **Fine-tuning panel** — export training data, start Azure OpenAI fine-tuning jobs, monitor status, and deploy fine-tuned models
 - **Settings panel** — 18 configurable preprocessing parameters
 
@@ -188,7 +188,7 @@ The system supports Azure OpenAI fine-tuning to permanently teach the model your
 
 ### How It Works
 
-1. **Curate examples** — Add at least 10 examples via the Examples panel or by promoting good summaries
+1. **Curate examples** — Add at least 10 examples via the Examples panel (drag-and-drop files or paste text), or by promoting good summaries
 2. **Export training data** — Converts all examples to JSONL format (system prompt + input + ideal output)
 3. **Start fine-tuning** — Uploads training data to Azure OpenAI and creates a fine-tuning job
 4. **Monitor progress** — Check job status until training completes
@@ -401,6 +401,7 @@ intelligent-document-processor/
 | `/api/image/{docId}/{page}` | GET | Function key | Serve enhanced page image |
 | `/api/summary/{docId}` | GET | Function key | Retrieve saved summary |
 | `/api/examples` | GET/POST | Function key | Manage few-shot examples |
+| `/api/examples/upload` | POST | Function key | Create example from uploaded files (TXT, DOCX, PDF) |
 | `/api/promote-to-example` | POST | Function key | Promote a document to a golden example |
 | `/api/pipeline-status/{id}` | GET | Function key | Query orchestration status |
 | `/api/ui` | GET | Anonymous | Dashboard UI |
@@ -419,6 +420,18 @@ The summarization uses **in-context learning** — curated (input, ideal-summary
 | **Semantic similarity** | Cosine similarity via `text-embedding-3-small` vectors |
 
 Examples are stored in `artifacts/examples/{id}/` with `input.txt`, `summary.txt`, `metadata.json`, and `embedding.json`.
+
+### Adding Examples
+
+There are three ways to add training examples:
+
+| Method | Description |
+|--------|-------------|
+| **Drag-and-drop files** | Drop an input document + ideal summary file (TXT, DOCX, or text-based PDF) into the "Add Example" dialog — no scanning or OCR needed |
+| **Paste text** | Toggle to paste mode and type/paste the input text and ideal summary directly |
+| **Promote a processed document** | Click "Save as Example" on any document's Summary tab to save the OCR text + AI summary as a training pair |
+
+> **Tip:** Drag-and-drop is the fastest way for doctors to add training examples — just drop the original document and the corrected summary, and the system extracts the text automatically.
 
 ---
 
