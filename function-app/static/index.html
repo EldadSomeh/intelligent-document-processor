@@ -610,6 +610,99 @@
             margin-top: 1rem;
             display: none;
         }
+
+        /* ── Training Examples Drop Zones ──── */
+        .training-panel { margin-bottom: 1.5rem; }
+        .training-panel .settings-body { padding: 0 1rem 1rem; }
+        .training-drop-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .training-drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: var(--surface);
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+        }
+        .training-drop-zone:hover,
+        .training-drop-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(59,130,246,.08);
+        }
+        .training-drop-zone.has-file {
+            border-color: var(--green);
+            background: rgba(74,222,128,.06);
+        }
+        .training-drop-zone .drop-icon { font-size: 1.8rem; }
+        .training-drop-zone .drop-label { font-size: 0.85rem; font-weight: 600; }
+        .training-drop-zone .drop-hint { font-size: 0.72rem; color: var(--text-dim); }
+        .training-drop-zone .drop-file { font-size: 0.82rem; color: var(--green); font-weight: 600; }
+        .training-drop-zone .drop-size { font-size: 0.72rem; color: var(--text-dim); }
+        .training-drop-zone .drop-remove {
+            background: none; border: none; color: var(--text-dim); cursor: pointer;
+            font-size: 0.75rem; text-decoration: underline; margin-top: 0.3rem;
+        }
+        .training-drop-zone .drop-remove:hover { color: var(--red); }
+        .training-meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.8rem;
+            margin-bottom: 1rem;
+        }
+        .training-meta-grid label {
+            font-size: 0.78rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;
+        }
+        .training-meta-grid input,
+        .training-meta-grid select {
+            width: 100%; background: var(--surface2); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 0.35rem 0.5rem; font-size: 0.85rem;
+        }
+        .training-golden-row {
+            display: flex; align-items: center; gap: 0.5rem;
+            margin-bottom: 1rem; font-size: 0.85rem;
+        }
+        .training-golden-row input[type="checkbox"] {
+            accent-color: var(--yellow); width: 16px; height: 16px;
+        }
+        #trainingExStatus {
+            margin: 0.8rem 0; padding: 0.7rem; border-radius: 8px;
+            background: var(--surface2); font-size: 0.85rem; display: none;
+        }
+        .training-examples-list {
+            max-height: 250px; overflow-y: auto;
+            border: 1px solid var(--border); border-radius: 8px;
+            margin-top: 1rem;
+        }
+        .training-examples-list .ex-item {
+            display: flex; align-items: center; gap: 0.8rem;
+            padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border);
+            font-size: 0.82rem;
+        }
+        .training-examples-list .ex-item:last-child { border-bottom: none; }
+        .training-examples-list .ex-golden { color: var(--yellow); }
+        .training-examples-list .ex-type {
+            background: var(--surface2); padding: 0.15rem 0.5rem;
+            border-radius: 4px; font-size: 0.72rem;
+        }
+        .training-examples-list .ex-info { flex: 1; min-width: 0; }
+        .training-examples-list .ex-desc { color: var(--text-dim); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .training-examples-list .ex-delete {
+            background: none; border: none; color: var(--red); cursor: pointer;
+            font-size: 0.85rem; opacity: 0.6;
+        }
+        .training-examples-list .ex-delete:hover { opacity: 1; }
         .upload-progress.active {
             display: block;
         }
@@ -1366,6 +1459,79 @@
                     <button class="btn-reset" onclick="resetSettings()">↺ Reset Defaults</button>
                     <button class="btn-apply" onclick="saveSettings()">💾 Save Settings</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Training Examples Panel -->
+    <div class="settings-panel training-panel" id="trainingExPanel">
+        <div class="settings-header" onclick="toggleTrainingExamples()">
+            <h3>📚 Training Examples</h3>
+            <span class="settings-chevron" id="trainingExChevron">▼</span>
+        </div>
+        <div class="settings-body">
+            <div class="settings-content">
+                <p style="color:var(--text-dim);font-size:0.85rem;margin:0 0 1rem;line-height:1.5;">
+                    Add training examples by dropping document files. The system extracts text automatically — no scanning or OCR needed. These examples improve summarization quality immediately (few-shot) and can be used for fine-tuning.
+                </p>
+
+                <div class="training-drop-grid">
+                    <div class="training-drop-zone" id="inputDropZone"
+                         onclick="document.getElementById('inputFileInput').click()">
+                        <input type="file" id="inputFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" />
+                        <div class="drop-icon">📄</div>
+                        <div class="drop-label">Drop input document</div>
+                        <div class="drop-hint">.txt, .docx, .pdf</div>
+                    </div>
+                    <div class="training-drop-zone" id="summaryDropZone"
+                         onclick="document.getElementById('summaryFileInput').click()">
+                        <input type="file" id="summaryFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" />
+                        <div class="drop-icon">📝</div>
+                        <div class="drop-label">Drop ideal summary</div>
+                        <div class="drop-hint">.txt, .docx, .pdf</div>
+                    </div>
+                </div>
+
+                <div class="training-meta-grid">
+                    <div>
+                        <label>Document Type</label>
+                        <select id="trainDocType">
+                            <option value="general">general</option>
+                            <option value="recruitment">recruitment</option>
+                            <option value="cardiology">cardiology</option>
+                            <option value="orthopedics">orthopedics</option>
+                            <option value="psychiatry">psychiatry</option>
+                            <option value="lab_results">lab results</option>
+                            <option value="imaging">imaging</option>
+                            <option value="surgery">surgery</option>
+                            <option value="discharge">discharge</option>
+                            <option value="referral">referral</option>
+                            <option value="prescription">prescription</option>
+                            <option value="other">other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Description</label>
+                        <input type="text" id="trainDescription" placeholder="e.g. Standard recruitment form" />
+                    </div>
+                    <div>
+                        <label>Tags (comma-separated)</label>
+                        <input type="text" id="trainTags" placeholder="hebrew, with-tables" />
+                    </div>
+                    <div class="training-golden-row" style="align-self:end;">
+                        <input type="checkbox" id="trainIsGolden" checked />
+                        <label style="margin:0;cursor:pointer;" for="trainIsGolden">⭐ Golden Example</label>
+                    </div>
+                </div>
+
+                <div id="trainingExStatus"></div>
+
+                <div class="settings-actions" style="gap:0.5rem;">
+                    <button class="btn-apply" onclick="uploadTrainingExample()" id="trainUploadBtn">💾 Save Example</button>
+                    <button class="btn-reset" onclick="loadTrainingExamples()" id="trainListBtn">📋 View Examples</button>
+                </div>
+
+                <div class="training-examples-list" id="trainingExList" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -2721,6 +2887,162 @@ async function fineTuneDeploy(model) {
         statusDiv.innerHTML = `<span style="color:#4ade80;">✅ Active model: <strong>${data.activeModel}</strong></span><br><small style="color:var(--text-dim);">Note: Update AZURE_OPENAI_DEPLOYMENT in App Settings for permanent change.</small>`;
     } catch (e) {
         showToast('error', 'Deploy Failed', e.message);
+    }
+}
+
+// ── Training Examples ────────────────────
+let trainInputFile = null;
+let trainSummaryFile = null;
+
+function toggleTrainingExamples() {
+    document.getElementById('trainingExPanel').classList.toggle('open');
+}
+
+// Drag-and-drop setup for training zones
+['inputDropZone', 'summaryDropZone'].forEach(id => {
+    const zone = document.getElementById(id);
+    const isInput = id === 'inputDropZone';
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file) setTrainingFile(isInput, file);
+    });
+});
+
+document.getElementById('inputFileInput').addEventListener('change', function() {
+    if (this.files[0]) setTrainingFile(true, this.files[0]);
+});
+document.getElementById('summaryFileInput').addEventListener('change', function() {
+    if (this.files[0]) setTrainingFile(false, this.files[0]);
+});
+
+function setTrainingFile(isInput, file) {
+    if (isInput) trainInputFile = file;
+    else trainSummaryFile = file;
+    const zone = document.getElementById(isInput ? 'inputDropZone' : 'summaryDropZone');
+    zone.classList.add('has-file');
+    zone.innerHTML = `
+        <input type="file" id="${isInput ? 'inputFileInput' : 'summaryFileInput'}" accept=".txt,.docx,.pdf,.md" style="display:none" />
+        <div class="drop-icon">✅</div>
+        <div class="drop-file">${escapeHtml(file.name)}</div>
+        <div class="drop-size">${Math.round(file.size / 1024)} KB</div>
+        <button class="drop-remove" onclick="event.stopPropagation(); clearTrainingFile(${isInput})">Remove</button>
+    `;
+    // Re-bind file input
+    const inp = zone.querySelector('input[type=file]');
+    inp.addEventListener('change', function() {
+        if (this.files[0]) setTrainingFile(isInput, this.files[0]);
+    });
+}
+
+function clearTrainingFile(isInput) {
+    if (isInput) trainInputFile = null;
+    else trainSummaryFile = null;
+    const zone = document.getElementById(isInput ? 'inputDropZone' : 'summaryDropZone');
+    zone.classList.remove('has-file');
+    zone.innerHTML = `
+        <input type="file" id="${isInput ? 'inputFileInput' : 'summaryFileInput'}" accept=".txt,.docx,.pdf,.md" style="display:none" />
+        <div class="drop-icon">${isInput ? '📄' : '📝'}</div>
+        <div class="drop-label">Drop ${isInput ? 'input document' : 'ideal summary'}</div>
+        <div class="drop-hint">.txt, .docx, .pdf</div>
+    `;
+    const inp = zone.querySelector('input[type=file]');
+    inp.addEventListener('change', function() {
+        if (this.files[0]) setTrainingFile(isInput, this.files[0]);
+    });
+}
+
+async function uploadTrainingExample() {
+    if (!trainInputFile || !trainSummaryFile) {
+        showToast('error', 'Missing Files', 'Drop both an input document and an ideal summary file.');
+        return;
+    }
+    const btn = document.getElementById('trainUploadBtn');
+    const statusDiv = document.getElementById('trainingExStatus');
+    btn.disabled = true;
+    btn.textContent = '⏳ Uploading…';
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<span style="color:var(--accent);">Uploading and extracting text…</span>';
+
+    try {
+        const formData = new FormData();
+        formData.append('inputFile', trainInputFile);
+        formData.append('summaryFile', trainSummaryFile);
+        formData.append('documentType', document.getElementById('trainDocType').value);
+        formData.append('description', document.getElementById('trainDescription').value);
+        formData.append('isGolden', document.getElementById('trainIsGolden').checked ? 'true' : 'false');
+        formData.append('tags', document.getElementById('trainTags').value);
+
+        const resp = await fetch(apiUrl('examples/upload'), { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Upload failed');
+
+        statusDiv.innerHTML = `<span style="color:var(--green);">✅ Example <strong>${data.exampleId}</strong> saved! (${data.inputLength} chars input, ${data.summaryLength} chars summary)</span>`;
+        showToast('success', 'Example Saved', `Training example ${data.exampleId} created from uploaded files.`);
+
+        // Reset form
+        clearTrainingFile(true);
+        clearTrainingFile(false);
+        document.getElementById('trainDescription').value = '';
+        document.getElementById('trainTags').value = '';
+    } catch (e) {
+        statusDiv.innerHTML = `<span style="color:var(--red);">❌ ${escapeHtml(e.message)}</span>`;
+        showToast('error', 'Upload Failed', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Save Example';
+    }
+}
+
+async function loadTrainingExamples() {
+    const listDiv = document.getElementById('trainingExList');
+    const btn = document.getElementById('trainListBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Loading…';
+    listDiv.style.display = 'block';
+    listDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-dim);">Loading…</div>';
+
+    try {
+        const resp = await fetch(apiUrl('examples'));
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed to load');
+
+        if (!data.length) {
+            listDiv.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--text-dim);">No examples yet. Upload your first pair above.</div>';
+            return;
+        }
+
+        listDiv.innerHTML = data.map(ex => `
+            <div class="ex-item">
+                <span class="ex-golden">${ex.isGolden ? '⭐' : '☆'}</span>
+                <span class="ex-type">${(ex.documentType || 'general').replace(/_/g, ' ')}</span>
+                <div class="ex-info">
+                    <div>${ex.exampleId} · ${ex.inputLength || '?'} → ${ex.summaryLength || '?'} chars</div>
+                    <div class="ex-desc">${escapeHtml(ex.description || 'No description')}</div>
+                </div>
+                <button class="ex-delete" title="Delete" onclick="deleteTrainingExample('${ex.exampleId}')">🗑</button>
+            </div>
+        `).join('');
+    } catch (e) {
+        listDiv.innerHTML = `<div style="padding:1rem;text-align:center;color:var(--red);">❌ ${escapeHtml(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📋 View Examples';
+    }
+}
+
+async function deleteTrainingExample(exampleId) {
+    if (!confirm(`Delete example ${exampleId}? This cannot be undone.`)) return;
+    try {
+        const resp = await fetch(apiUrl(`examples/${exampleId}`), { method: 'DELETE' });
+        if (!resp.ok) throw new Error('Delete failed');
+        showToast('success', 'Deleted', `Example ${exampleId} removed.`);
+        loadTrainingExamples();
+    } catch (e) {
+        showToast('error', 'Delete Failed', e.message);
     }
 }
 
