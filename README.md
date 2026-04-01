@@ -51,7 +51,7 @@ The entire pipeline is orchestrated by **Azure Durable Functions** with built-in
 | **Few-Shot Learning** | Curated examples injected into each LLM call for consistent output quality |
 | **Fine-Tuning** | Train a custom Azure OpenAI model on your examples for permanent style learning |
 | **Embedding Re-Ranking** | Examples ranked by semantic similarity using `text-embedding-3-small` vectors |
-| **Quality Metrics** | Blur score, estimated DPI, redaction %, OCR readiness — per page |
+| **Quality Metrics** | Blur score, estimated DPI, redaction %, post-OCR Quality score (confidence, coherence, density) — per page |
 | **Self-Contained UI** | Single-page React dashboard with drag-and-drop upload, pipeline tracking, settings, and document detail views |
 
 ---
@@ -66,8 +66,8 @@ The entire pipeline is orchestrated by **Azure Durable Functions** with built-in
 | **Image Processing** | OpenCV (headless), NumPy, Pillow, pdf2image, poppler-utils | Diagnosis-driven enhancement pipeline — grayscale conversion, auto-crop, denoising, contrast/brightness correction, deskew, upscaling, and region-aware adaptive thresholding |
 | **Region Detection** | OpenCV contour analysis + color segmentation | Detects stamps (red/blue hue), signatures, and tables to protect them during binarization |
 | **OCR Extraction** | Azure Document Intelligence (prebuilt-layout model) | Parallel per-page processing with structured output — text, tables, figures, and bounding boxes |
-| **AI Summarization** | Azure OpenAI (GPT-4o-mini) | Structured summary generation with few-shot in-context learning. System prompt + curated examples injected per call |
-| **Smart Figure Analysis** | Azure OpenAI (GPT-4o Vision) | Classifies extracted figures and filters out logos/stamps/headers to avoid unnecessary Vision model calls |
+| **AI Summarization** | Azure OpenAI (GPT-4o-mini) | Comprehensive medical summary generation — extracts ALL clinical data (diagnoses, findings, labs, imaging). Few-shot in-context learning with curated examples |
+| **Smart Figure Analysis** | Azure OpenAI (GPT-4o Vision) | Automatically detects charts, graphs, and figures in documents. Filters out logos/stamps/headers, sends real figures to GPT-4o Vision for visual analysis with `detail: high` |
 | **Embedding Re-Ranking** | Azure OpenAI (text-embedding-3-small) | Cosine similarity scoring to rank few-shot examples by semantic relevance to the input document |
 | **Storage** | Azure Blob Storage, Table Storage, Queue Storage | Blob: raw uploads, enhanced pages, output summaries. Table: Durable Functions orchestration state. Queue: internal messaging |
 | **Networking** | VNet, Private Endpoints | VNet isolation with subnet segmentation for Function App and private endpoints |
@@ -478,16 +478,21 @@ Each processed page is scored on:
 | **Blur Score** | Laplacian variance | Higher = sharper |
 | **Estimated DPI** | Pixel dimension analysis | Target: ≥200 DPI |
 | **Redaction %** | Black rectangle detection | High = unusable |
-| **OCR Readiness** | Composite score | `0.4 × blur + 0.3 × contrast + 0.3 × redaction` |
+| **OCR Readiness** | Pre-OCR composite score | `0.4 × blur + 0.3 × contrast + 0.3 × redaction` — used for preprocessing decisions |
+| **OCR Quality** | Post-OCR assessment | `0.35×confidence + 0.20×density + 0.15×coherence + 0.15×(1-garbage) + 0.10×(1-repetition) + 0.05×structure` |
 
-### Decision Logic
+The **OCR Quality** score is computed after Document Intelligence runs, using actual OCR output — word confidence, text density, language coherence, garbage character ratio, repetition detection, and structure (tables/pages). This replaces the pre-OCR readiness score in the UI when available.
+
+### Decision Logic (Preprocessing)
 
 | Condition | Action |
 |-----------|--------|
 | blur < 15 or redaction > 90% | Fail |
-| blur < 50 or redaction > 70% or readiness < 0.30 | OCR with low confidence |
+| blur < 50 or redaction > 70% or readiness < 0.30 | OCR with low confidence flag |
 | readiness < 0.50 | Retry with aggressive preprocessing |
 | Otherwise | Send to OCR |
+
+> **Note:** If OCR quality is high (≥ 0.5), the "low confidence" flag is suppressed in the UI — the document turned out fine despite poor preprocessing metrics.
 
 ---
 

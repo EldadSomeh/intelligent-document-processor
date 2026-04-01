@@ -215,10 +215,11 @@ class MetricsCalculator:
 
         readiness = self._ocr_readiness(blur, redact, img, original_dpi)
 
-        # Faded-text metrics for quality warnings
+        # Additional metrics for quality display
         mean_brightness = float(np.mean(img))
         total_pixels = img.size
         dark_pixel_pct = float(np.sum(img < 30)) / total_pixels * 100.0
+        contrast = float(np.std(img))
 
         return {
             "blurScore": blur,
@@ -227,6 +228,7 @@ class MetricsCalculator:
             "ocrReadinessScore": readiness,
             "meanBrightness": round(mean_brightness, 1),
             "darkPixelPercent": round(dark_pixel_pct, 1),
+            "contrastScore": round(contrast, 1),
         }
 
     # ── Aggregate across pages ───────────────────────────────────────
@@ -340,58 +342,127 @@ class MetricsCalculator:
 
     @staticmethod
     def _ocr_readiness(blur: float, redact_pct: float, img: np.ndarray, dpi: int = 300) -> float:
-        """Weighted score in [0, 1] combining sharpness, contrast, redaction, DPI, and faded text.
+        """Comprehensive OCR readiness score in [0, 1].
 
-        The faded-text penalty detects washed-out scans where text is light gray
-        on white background.  Uses two signals:
-          - Dark pixel ratio: fewer dark pixels = more faded
-          - White pixel dominance: more white pixels = more washed out
-        Penalty range is 0.35 (severely faded) to 1.0 (normal).
+        Formula:
+          ocrReadiness = baseScore × dpi_factor × illumination_factor × geometry_factor
 
-        DPI below 200 applies a multiplier penalty (like faded penalty) that
-        scales the entire score down.  200+ DPI = no penalty, 150 = 0.75×,
-        100 = 0.50×, 50 = 0.25×.
+        baseScore =
+          0.30 × sharpness      (Laplacian variance normalized)
+          0.20 × contrast       (pixel stddev normalized)
+          0.15 × noise_score    (low noise = high score)
+          0.15 × binarization   (clean Otsu separation = high score)
+          0.10 × text_density   (sufficient dark text pixels = high score)
+          0.10 × redaction_pen  (less redaction = higher score)
+
+        Multipliers:
+          dpi_factor         = 1.0 if DPI >= 300, else DPI/300
+          illumination_factor = penalizes too dark or too bright images
+          geometry_factor    = penalizes skewed documents
         """
-        blur_norm = min(blur / 500.0, 1.0)
-        contrast_norm = min(float(np.std(img)) / 80.0, 1.0)
+        h, w = img.shape[:2]
+
+        # ── Base score components ────────────────────────────────
+
+        # 1. Sharpness (30%) — Laplacian variance normalized
+        sharpness = min(blur / 500.0, 1.0)
+
+        # 2. Contrast (20%) — pixel stddev normalized
+        contrast = min(float(np.std(img)) / 80.0, 1.0)
+
+        # 3. Noise score (15%) — estimate noise via high-pass filter on downscaled image
+        #    Lower noise variance = cleaner image = higher score
+        noise_scale = 0.25 if max(h, w) > 1000 else 0.5
+        noise_img = cv2.resize(img, None, fx=noise_scale, fy=noise_scale, interpolation=cv2.INTER_AREA)
+        blurred_img = cv2.GaussianBlur(noise_img, (5, 5), 0)
+        noise = noise_img.astype(np.float32) - blurred_img.astype(np.float32)
+        noise_variance = float(np.var(noise))
+        # Normalize: noise_var < 50 = clean, > 500 = very noisy
+        noise_score = max(0.0, min(1.0, 1.0 - (noise_variance - 50) / 450.0))
+
+        # 4. Binarization score (15%) — how cleanly Otsu separates text from bg
+        #    High inter-class variance relative to total variance = clean separation
+        bin_scale = 0.25 if max(h, w) > 1000 else 0.5
+        bin_img = cv2.resize(img, None, fx=bin_scale, fy=bin_scale, interpolation=cv2.INTER_AREA)
+        total_var = float(np.var(bin_img))
+        if total_var > 0:
+            _, binary = cv2.threshold(bin_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            fg_pixels = bin_img[binary == 0]
+            bg_pixels = bin_img[binary == 255]
+            if len(fg_pixels) > 0 and len(bg_pixels) > 0:
+                fg_mean = float(np.mean(fg_pixels))
+                bg_mean = float(np.mean(bg_pixels))
+                fg_weight = len(fg_pixels) / img.size
+                bg_weight = len(bg_pixels) / img.size
+                inter_class_var = fg_weight * bg_weight * (fg_mean - bg_mean) ** 2
+                binarization_score = min(1.0, inter_class_var / max(total_var, 1.0))
+            else:
+                binarization_score = 0.0
+        else:
+            binarization_score = 0.0
+
+        # 5. Text density (10%) — ratio of dark pixels indicating text presence
+        dark_pixel_pct = float(np.sum(img < 80)) / img.size * 100.0
+        # Ideal text density is 5-30%. Too low = blank, too high = all black
+        if dark_pixel_pct < 1.0:
+            text_density_score = dark_pixel_pct / 1.0  # nearly blank
+        elif dark_pixel_pct <= 30.0:
+            text_density_score = 1.0  # good range
+        elif dark_pixel_pct <= 60.0:
+            text_density_score = max(0.3, 1.0 - (dark_pixel_pct - 30.0) / 30.0)
+        else:
+            text_density_score = 0.3  # mostly black
+
+        # 6. Redaction penalty (10%)
         redact_penalty = max(0.0, 1.0 - redact_pct / 100.0)
 
-        # DPI penalty: low resolution aggressively reduces the entire score
-        # Uses exponential penalty so low-DPI images (phone photos, screenshots)
-        # score very low, reflecting that OCR will struggle with small text.
-        # The dpi parameter should be from the ORIGINAL image (before upscaling)
-        # so that artificial upscaling doesn't inflate the score.
-        #   DPI 200+ → 1.0 (no penalty)
-        #   DPI 180  → 0.59
-        #   DPI 150  → 0.24
-        #   DPI 145  → 0.20
-        #   DPI 100  → 0.03
-        if dpi >= 200:
-            dpi_penalty = 1.0
-        else:
-            dpi_penalty = max(0.03, (dpi / 200.0) ** 5)
+        base_score = (
+            0.30 * sharpness
+            + 0.20 * contrast
+            + 0.15 * noise_score
+            + 0.15 * binarization_score
+            + 0.10 * text_density_score
+            + 0.10 * redact_penalty
+        )
 
-        # Faded-text penalty: washed-out scans with very few dark pixels
-        # Uses two signals: high brightness AND low dark-pixel ratio
+        # ── Multiplier factors ───────────────────────────────────
+
+        # DPI factor: 1.0 if >= 300, linear below
+        dpi_factor = min(1.0, max(0.30, dpi / 300.0))
+
+        # Illumination factor: penalizes too dark or too bright
+        # Ideal mean brightness is ~150 (good scan of white paper with dark text)
         mean_brightness = float(np.mean(img))
-        total_pixels = img.size
-        dark_pixel_pct = float(np.sum(img < 30)) / total_pixels * 100.0
-        white_pixel_pct = float(np.sum(img > 230)) / total_pixels * 100.0
+        illumination_factor = max(0.30, 1.0 - abs(mean_brightness - 150.0) / 150.0)
 
-        if mean_brightness > FADED_BRIGHTNESS_THRESHOLD and dark_pixel_pct < FADED_DARK_PIXEL_THRESHOLD:
-            # Primary signal: how few dark (text) pixels exist
-            # 5% dark = mild fade, 1% dark = severe fade, 0% = blank
-            dark_severity = 1.0 - min(dark_pixel_pct / FADED_DARK_PIXEL_THRESHOLD, 1.0)
-            # Secondary signal: how white-dominated the page is
-            white_severity = min(white_pixel_pct / 60.0, 1.0)  # 60%+ white = max
-            # Combined: use the stronger of the two signals
-            fade_severity = max(dark_severity, white_severity)
-            # Penalty range: 0.35 (severely faded) to 0.90 (mildly faded)
-            faded_penalty = max(0.35, 1.0 - fade_severity * 0.65)
+        # Geometry factor: detect skew using Hough on a downscaled image for speed
+        # The preprocessing pipeline already deskews, so this is a quick sanity check
+        scale = 0.25 if max(h, w) > 1000 else 0.5
+        small = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        sh, sw = small.shape[:2]
+        edges = cv2.Canny(small, 50, 150, apertureSize=3)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50,
+                                minLineLength=sw // 4, maxLineGap=10)
+        if lines is not None and len(lines) > 0:
+            angles = []
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                if x2 - x1 != 0:
+                    angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
+                    # Normalize to 0-45 range (horizontal or vertical reference)
+                    if angle > 45:
+                        angle = 90 - angle
+                    angles.append(angle)
+            if angles:
+                skew_angle = float(np.median(angles))
+            else:
+                skew_angle = 0.0
         else:
-            faded_penalty = 1.0
+            skew_angle = 0.0
 
-        score = (0.4 * blur_norm + 0.3 * contrast_norm + 0.3 * redact_penalty) * faded_penalty * dpi_penalty
+        geometry_factor = max(0.70, 1.0 - skew_angle / 15.0)
+
+        score = base_score * dpi_factor * illumination_factor * geometry_factor
         return round(min(max(score, 0.0), 1.0), 3)
 
     # ── Decision logic ───────────────────────────────────────────────

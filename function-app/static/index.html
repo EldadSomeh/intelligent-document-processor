@@ -1593,7 +1593,7 @@
         <div class="stat-card"><div class="label">OCR Completed</div><div class="value green" id="statSuccess">-</div></div>
         <div class="stat-card"><div class="label">Failed</div><div class="value red" id="statFailed">-</div></div>
         <div class="stat-card"><div class="label">Warnings</div><div class="value yellow" id="statWarnings">-</div></div>
-        <div class="stat-card"><div class="label">Avg. OCR Readiness</div><div class="value yellow" id="statAvgScore">-</div></div>
+        <div class="stat-card"><div class="label">Avg. OCR Quality</div><div class="value yellow" id="statAvgScore">-</div></div>
     </div>
 
     <!-- Documents Table -->
@@ -1605,7 +1605,7 @@
                     <th>Pages</th>
                     <th>Blur Score</th>
                     <th>Redaction %</th>
-                    <th>OCR Readiness</th>
+                    <th>OCR Quality</th>
                     <th>Action</th>
                     <th>Status</th>
                     <th>Time</th>
@@ -1703,7 +1703,7 @@ function renderStats() {
     const warnedCount = allDocs.filter(d => (d.aggregated?.qualityWarnings || []).length > 0).length;
     const warnEl = document.getElementById('statWarnings');
     if (warnEl) warnEl.textContent = warnedCount;
-    const scores = allDocs.map(d => d.aggregated?.avgOcrReadinessScore).filter(s => s != null);
+    const scores = allDocs.map(d => d.ocrQuality?.score ?? d.aggregated?.avgOcrReadinessScore).filter(s => s != null);
     const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
     document.getElementById('statAvgScore').textContent = avg.toFixed(3);
 }
@@ -1718,10 +1718,10 @@ function renderTable() {
     tbody.innerHTML = allDocs.map(doc => {
         const agg = doc.aggregated || {};
         const action = agg.recommendedNextAction || '-';
-        const score = agg.avgOcrReadinessScore ?? 0;
+        const score = doc.ocrQuality?.score ?? agg.avgOcrReadinessScore ?? 0;
         const blur = agg.avgBlurScore ?? 0;
         const redact = agg.avgRedactionPercent ?? 0;
-        const scoreColor = score >= 0.5 ? 'var(--green)' : score >= 0.3 ? 'var(--yellow)' : 'var(--red)';
+        const scoreColor = score >= 0.7 ? 'var(--green)' : score >= 0.5 ? 'var(--yellow)' : 'var(--red)';
 
         let statusBadge;
         if (doc.ocrCompleted && doc.summaryCompleted) statusBadge = '<span class="badge success">Summarized</span>';
@@ -1982,7 +1982,7 @@ function renderDetail(data, docId) {
                 <div class="failure-detail">
                     <div class="fd-row"><div class="fd-label">\ud83d\udd0d Cause</div><div class="fd-value">${escapeHtml(failDesc.cause)}</div></div>
                     <div class="fd-row"><div class="fd-label">\ud83d\udca1 Fix</div><div class="fd-value">${escapeHtml(failDesc.suggestion)}</div></div>
-                    <div class="fd-row"><div class="fd-label">\ud83d\udcca Metrics</div><div class="fd-value">Blur: ${(agg.avgBlurScore||0).toFixed(1)} | Redaction: ${(agg.avgRedactionPercent||0).toFixed(1)}% | OCR Readiness: ${(agg.avgOcrReadinessScore||0).toFixed(3)}</div></div>
+                    <div class="fd-row"><div class="fd-label">\ud83d\udcca Metrics</div><div class="fd-value">Blur: ${(agg.avgBlurScore||0).toFixed(1)} | Redaction: ${(agg.avgRedactionPercent||0).toFixed(1)}% | OCR Quality: ${(agg.avgOcrReadinessScore||0).toFixed(3)}</div></div>
                 </div>
             </div>`;
     }
@@ -2062,13 +2062,9 @@ function renderDetail(data, docId) {
                         const enhPages = validPages.filter(p => p.enhancedBlurScore != null && p.enhancedBlurScore > 0);
                         const avgEnhBlur = enhPages.length
                             ? enhPages.reduce((s,p) => s + p.enhancedBlurScore, 0) / enhPages.length : null;
-                        const avgEnhOcr = enhPages.length
-                            ? enhPages.reduce((s,p) => s + (p.enhancedOcrReadinessScore||0), 0) / enhPages.length : null;
                         // For the original-side comparison, use same enhanced pages so the arrow % is meaningful
                         const avgOrigBlurForComp = enhPages.length
                             ? enhPages.reduce((s,p) => s + (p.blurScore||0), 0) / enhPages.length : 0;
-                        const avgOrigOcrForComp = enhPages.length
-                            ? enhPages.reduce((s,p) => s + (p.ocrReadinessScore||0), 0) / enhPages.length : 0;
                         const hasEnhanced = avgEnhBlur !== null && avgEnhBlur > 0;
                         const arrow = (before, after) => {
                             if (after == null || after === 0) return '';
@@ -2097,13 +2093,9 @@ function renderDetail(data, docId) {
                             <div class="metric-value">${(agg.avgRedactionPercent||0).toFixed(1)}%</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">OCR Readiness <span style="font-size:0.65rem;color:var(--text-dim)">(original)</span></div>
+                            <div class="metric-label">OCR Quality</div>
                             <div class="metric-value" style="color:${scoreColor(agg.avgOcrReadinessScore||0)}">${(agg.avgOcrReadinessScore||0).toFixed(3)}</div>
                         </div>
-                        ${hasEnhanced ? `<div class="metric-item">
-                            <div class="metric-label">OCR Readiness <span style="font-size:0.65rem;color:var(--accent)">(enhanced)</span></div>
-                            <div class="metric-value" style="color:${scoreColor(avgEnhOcr)}">${avgEnhOcr.toFixed(3)}${arrow(avgOrigOcrForComp, avgEnhOcr)}</div>
-                        </div>` : ''}
                         <div class="metric-item">
                             <div class="metric-label">Decision</div>
                             <div class="metric-value" style="font-size:0.9rem">${agg.recommendedNextAction||'-'}</div>

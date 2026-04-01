@@ -85,30 +85,6 @@ _PRESETS: list[_Preset] = [
         description="Standard processing with good sharpening",
     ),
     _Preset(
-        name="denoise_heavy",
-        aggressive=False,
-        denoise_h=7,
-        clahe_clip=2.0,
-        sharpen_amount=0.9,
-        sharpen_radius=1.2,
-        enable_morph_cleanup=True,
-        enable_sharpen=True,
-        enable_final_sharpen=True,
-        description="Strong denoising with aggressive compensatory sharpening",
-    ),
-    _Preset(
-        name="aggressive",
-        aggressive=True,
-        denoise_h=10,
-        clahe_clip=2.5,
-        sharpen_amount=0.7,
-        sharpen_radius=1.0,
-        enable_morph_cleanup=True,
-        enable_sharpen=True,
-        enable_final_sharpen=True,
-        description="Full aggressive enhancement pipeline",
-    ),
-    _Preset(
         name="sharp_focus",
         aggressive=False,
         denoise_h=1,
@@ -119,18 +95,6 @@ _PRESETS: list[_Preset] = [
         enable_sharpen=True,
         enable_final_sharpen=True,
         description="Minimal denoising, maximum sharpening for blurry docs",
-    ),
-    _Preset(
-        name="ultra_sharp",
-        aggressive=False,
-        denoise_h=1,
-        clahe_clip=1.5,
-        sharpen_amount=1.2,
-        sharpen_radius=2.0,
-        enable_morph_cleanup=False,
-        enable_sharpen=True,
-        enable_final_sharpen=True,
-        description="Maximum edge crispness — double-pass sharpening for soft scans",
     ),
 ]
 
@@ -247,10 +211,35 @@ class AutoTuner:
             processor._enable_final_sharpen = preset.enable_final_sharpen
 
             try:
-                report = processor.process(
-                    page_path, candidate_path,
-                    precomputed_detection=shared_detection,
-                )
+                import signal as _signal
+                import threading as _threading
+
+                _process_result = [None, None]  # [report, exception]
+
+                def _run_preset():
+                    try:
+                        _process_result[0] = processor.process(
+                            page_path, candidate_path,
+                            precomputed_detection=shared_detection,
+                        )
+                    except Exception as e:
+                        _process_result[1] = e
+
+                t = _threading.Thread(target=_run_preset, daemon=True)
+                t.start()
+                t.join(timeout=60)  # 60 seconds per preset max
+
+                if t.is_alive():
+                    logger.warning(
+                        "AutoTune preset '%s' TIMED OUT for page %d (>60s) – skipping",
+                        preset.name, page_idx,
+                    )
+                    continue
+
+                if _process_result[1] is not None:
+                    raise _process_result[1]
+
+                report = _process_result[0]
             except Exception as exc:
                 logger.warning(
                     "AutoTune preset '%s' failed for page %d: %s",

@@ -300,9 +300,9 @@ def preprocess(req: func.HttpRequest) -> func.HttpResponse:
                     _page_result["regionDetection"] = region_info
                 return _page_result
 
-            # Fan-out: process pages in parallel (up to 3 workers to
-            # balance CPU load vs. throughput — OpenCV releases the GIL).
-            _max_pp_workers = min(len(page_images), 3)
+            # Fan-out: process pages in parallel (up to 6 workers for
+            # faster throughput — OpenCV releases the GIL).
+            _max_pp_workers = min(len(page_images), 6)
             if _max_pp_workers <= 1:
                 # Single page — run inline, no thread overhead
                 page_results = [
@@ -316,8 +316,34 @@ def preprocess(req: func.HttpRequest) -> func.HttpResponse:
                         for idx, path in enumerate(page_images, start=1)
                     }
                     for fut in _as_completed(_pp_futures):
-                        res = fut.result()
-                        page_results_map[res["pageNumber"]] = res
+                        page_idx = _pp_futures[fut]
+                        try:
+                            res = fut.result(timeout=120)  # 2 min max per page
+                            page_results_map[res["pageNumber"]] = res
+                        except Exception as page_exc:
+                            logger.exception(
+                                "Page %d CRASHED during preprocessing — using original | docId=%s",
+                                page_idx, doc_id,
+                            )
+                            # Fallback: copy original as enhanced and use minimal metrics
+                            _fallback_path = f"enhanced/{doc_id}/page-{page_idx}.png"
+                            try:
+                                _orig_page = page_images[page_idx - 1]
+                                blob_helper.upload(
+                                    _orig_page, "artifacts", _fallback_path,
+                                    content_type="image/png",
+                                )
+                            except Exception:
+                                pass
+                            page_results_map[page_idx] = {
+                                "pageNumber": page_idx,
+                                "enhancedBlobPath": _fallback_path,
+                                "blurScore": 0,
+                                "estimatedDpi": 0,
+                                "redactionPercent": 0,
+                                "ocrReadinessScore": 0,
+                                "enhancement": {"error": str(page_exc), "rolledBack": True},
+                            }
                 # Return results in page order
                 page_results = [
                     page_results_map[i]
@@ -495,20 +521,6 @@ def _markdown_to_html(md: str) -> str:
         if line.startswith("- "):
             line = f'<li style="margin-right:20px;list-style:disc">{line[2:]}</li>'
 
-        # Data-source markers: 📋 TABLE and 📊 VISION
-        if _EMOJI_TABLE in line:
-            line = _re.sub(
-                '(' + _EMOJI_TABLE + r'\s*<strong>.*?</strong>)',
-                _TABLE_DIV_OPEN + r'\1' + _TABLE_DIV_CLOSE,
-                line,
-            )
-        if _EMOJI_VISION in line:
-            line = _re.sub(
-                '(' + _EMOJI_VISION + r'\s*<strong>.*?</strong>)',
-                _VISION_DIV_OPEN + r'\1' + _VISION_DIV_CLOSE,
-                line,
-            )
-
         # Add <br> after non-block text lines
         if not any(line.lstrip().startswith(tag) for tag in _block_tags):
             line = line + "<br>"
@@ -570,12 +582,15 @@ def list_documents(req: func.HttpRequest) -> func.HttpResponse:
                 data = json.loads(blob_client.download_blob().readall())
                 doc_id = data.get("docId", "unknown")
 
-                # Check if OCR result exists
+                # Check if OCR result exists and extract ocrQuality
                 ocr_exists = False
+                ocr_quality = None
                 try:
                     outputs_client = blob_helper._client.get_container_client("outputs")
-                    outputs_client.get_blob_client(f"{doc_id}_ocr_result.json").get_blob_properties()
+                    ocr_blob = outputs_client.get_blob_client(f"{doc_id}_ocr_result.json")
+                    ocr_result = json.loads(ocr_blob.download_blob().readall())
                     ocr_exists = True
+                    ocr_quality = ocr_result.get("ocrQuality")
                 except Exception:
                     pass
 
@@ -602,7 +617,7 @@ def list_documents(req: func.HttpRequest) -> func.HttpResponse:
                 except Exception:
                     pass
 
-                documents.append({
+                doc_entry: dict = {
                     "docId": doc_id,
                     "sourceBlobPath": data.get("sourceBlobPath", ""),
                     "pageCount": len(data.get("pages", [])),
@@ -612,7 +627,10 @@ def list_documents(req: func.HttpRequest) -> func.HttpResponse:
                     "visionUsed": summary_vision,
                     "failure": failure,
                     "timestamp": blob.last_modified.isoformat() if blob.last_modified else None,
-                })
+                }
+                if ocr_quality is not None:
+                    doc_entry["ocrQuality"] = ocr_quality
+                documents.append(doc_entry)
 
         documents.sort(key=lambda d: d.get("timestamp", ""), reverse=True)
 
@@ -866,7 +884,7 @@ def _load_few_shot_examples(
                 example_metas.append(meta)
 
         if not example_metas:
-            return []
+            return [], {"count": 0, "goldenCount": 0, "typeMatchCount": 0, "examples": []}
 
         # ── Score & rank examples ────────────────────────────────
         def _score(m: dict) -> tuple:
@@ -1205,182 +1223,72 @@ def _assess_summary_quality(summary_text: str, ocr_text: str) -> dict:
 # Clinical Summarization endpoint
 # ═══════════════════════════════════════════════════════════════════════
 
-MEDICAL_SYSTEM_PROMPT = """You are a clinical medical document summarization agent.
-
-Your task is to summarize medical documents that originate from OCR output.
-The OCR text may contain:
-- Spelling errors
-- Broken sentences
-- Mixed Hebrew and English
-- Incorrect punctuation
-- Duplicated fragments
-- Scanning artifacts
-
-You must carefully reconstruct meaning before summarizing.
-
-=====================================
-PROCESSING INSTRUCTIONS
-=====================================
-
-Step 1 – OCR Cleanup (Internal reasoning)
-- Fix obvious OCR mistakes.
-- Merge broken lines into logical sentences.
-- Remove duplicated fragments.
-- Infer medical terminology if OCR distorted it.
-- Normalize units (mg, mmHg, %, dates).
-- Detect language (Hebrew / English / mixed).
-
-Step 2 – Clinical Structuring
-Extract and organize the information into:
-
-1. Patient Demographics (if exists)
-2. Medical History
-3. Active Diagnoses
-4. Medications (name + dose if available)
-5. Procedures / Surgeries
-6. Imaging Findings
-7. Lab Results (include values from tables if detected)
-8. Functional Limitations
-9. Mental Health Notes (if relevant)
-10. Physician Assessment
-11. Recommendations / Restrictions
-12. Structured Tables / Forms Data
-
-Step 2b – Table & Form Processing
-If structured tables are provided (from Document Intelligence layout analysis):
-- Parse rows/columns and map headers to values.
-- For lab results tables → extract test name, value, reference range, flag.
-- For medication tables → extract drug name, dose, frequency.
-- For vital signs tables → extract parameter and reading.
-- For form fields → map field labels to filled values.
-- Present tabular data in a clear structured format in the summary.
-- If a table has no clear headers, describe its content.
-- **Mark data extracted from structured tables** by starting the relevant line or
-  sub-section with the prefix "📋 " (clipboard emoji). For example:
-  📋 **Lab Results (from table):** Hemoglobin 14.2 g/dL …
-
-Step 2c – Figures & Charts
-If figures/charts are detected:
-- Note their presence in the summary.
-- If caption text is available, include the caption.
-- If page images are attached (marked "[Page N image – figure/chart for visual analysis]"):
-  • Visually analyze the chart, graph, or figure in detail.
-  • Extract axis labels, data points, trends, and numeric values.
-  • Describe what the visual shows in its clinical context.
-  • Include any extracted numeric data in the structured summary.
-  • **Mark data extracted from visual analysis** by starting the relevant line or
-    sub-section with the prefix "📊 " (chart emoji) and bold the heading. For example:
-    📊 **EKG Interpretation (visual analysis):** Sinus rhythm, 72 BPM …
-- If no page image is attached for a figure, state that chart data requires visual review.
-
-Step 3 – Summarization Rules
-- Be concise but medically accurate.
-- Do NOT hallucinate missing data.
-- If information is unclear → mark as: [Unclear due to OCR]
-- If critical medical data is missing → explicitly say so.
-- Preserve clinical terminology.
-- Do not exaggerate severity.
-- Keep neutral tone.
-
-Step 4 – Risk Flagging
-If the document contains:
-- Suicidal ideation
-- Severe psychiatric disorder
-- Active cancer
-- Cardiac risk
-- Neurological deficits
-- Severe functional impairment
-
-Add a section:
-"⚠ Clinical Risk Indicators"
+MEDICAL_SYSTEM_PROMPT = """You are a doctor's assistant tasked with summarizing medical records. Your goal is to:
+1. Extract ALL clinically relevant information from the provided medical records — including diagnoses, findings, symptoms, complaints, physical examination results, lab results, imaging, procedures, and any other medical observations documented by the physician.
+2. *Clearly identify any diagnoses* explicitly stated by the physician, ensuring they are not confused with findings or symptoms. If a diagnosis is present, it must be acknowledged separately from other observations.
+3. Findings, symptoms, and physical examination results should be included in the appropriate fields (תלונה עיקרית, סיכום מפגש נוכחי, etc.) — do not discard them.
+4. Ensure each diagnosis is clearly stated, understandable, and indicates whether it is from the current consultation or from the patient's medical history, based on the context provided in the records.
+5. If a diagnosis is recorded in English, it must be included in the summary in English without translation or addition of a translation.
+6. Do not generate any diagnoses of your own.
+7. Include ALL lab results, blood tests, and test values mentioned in the document — both normal and abnormal. Place them in the appropriate field (בדיקות עזר or סיכום מפגש נוכחי depending on timing).
+8. Ensure that any *medical terms* remain in their original form and are not translated.
+9. Detect all the languages present in the records and respond in the same languages as used in the respective parts of the records. Summarize each section in its original language and preserve all medical terminology in the original language of the records. Do not favor one language over another; keep the response consistent with the multilingual nature of the input.
+10. Do NOT omit, compress, or skip any medical information. Every piece of clinical data in the document must appear in at least one field of the output.
 
 =====================================
-OUTPUT FORMAT (STRICT)
+OUTPUT FORMAT
 =====================================
 
-## סיכום רפואי
+Your summary MUST include ALL of the following fields using EXACTLY these Hebrew labels as headings.
+Do NOT use any other headings, do NOT rephrase, do NOT add extra sections.
+Each field must appear as: "שם השדה - תוכן" (field name dash content).
+If a field has no data, write: "שם השדה - לא צוין".
 
-### 1. פרטי המטופל
-...
-
-### 2. מצבים רפואיים
-...
-
-### 3. תרופות
-...
-
-### 4. מצב תפקודי
-...
-
-### 5. הערכה קלינית
-...
-
-### 6. המלצות
-...
-
-### 7. פערי מידע / אי-ודאות OCR
-- ...
-
-### 8. אינדיקטורים לסיכון קליני (אם רלוונטי)
-- ...
+The ONLY allowed field headings (in this exact order):
+1. תאריך לידה
+2. גיל
+3. מין
+4. שם המטפל/ת
+5. מס' רישיון
+6. תחום התמחות
+7. מוסד רפואי
+8. תלונה עיקרית
+9. היסטוריה רפואית
+10. אבחנות
+11. בדיקות עזר (include ALL tests, lab results, and imaging mentioned in the document — both prior and current. Include dates and values when available.)
+12. תרופות קבועות
+13. סיכום מפגש נוכחי (Do NOT include any demographic data such as age, sex, name, or ID in this field. Only describe what happened during the current consultation.)
+14. מסקנות
+15. טיפולים והמלצות
 
 =====================================
-DATA SOURCE MARKERS (MANDATORY)
+EXAMPLE OUTPUT
 =====================================
 
-Whenever your summary includes data that was extracted from a structured table
-or from a visual chart/figure/graph/EKG image, you MUST prefix the relevant
-lines with the appropriate marker:
+תאריך לידה - לא צוין
+גיל - 19
+מין - זכר
+שם המטפל/ת - בנאי הגר
+מס' רישיון - 98553
+תחום התמחות - גסטרו
+מוסד רפואי - מרפאת גסטרו בלינסון
+תלונה עיקרית - קרוהן
 
-  📋  → data extracted from a structured table (lab results, medications, vitals, form fields)
-  📊  → data extracted from visual analysis of a chart, graph, figure, or EKG image
+בדיקות עזר - MRE מחלה באילאום דיסטאלי לאורך 25 ס"מ החל מ10 ס"מ פרוקסימלי למסתם ללא סיבוכים מבניים או חודרניים מחלה קולונית עם האדרה. 8.24 קולונו חוזר תקין. US-1.26 תקין.
+מעבדה 21.1.26 CPK 1381. בנוסף CRP תקין, קלפרו 13. AST 68. מעבדה 5.2.26 AST 50. CK 890.
 
-Format the marker at the START of the relevant bullet point or sub-heading.
-Also BOLD the description after the marker.
-Examples:
-  - 📋 **תוצאות מעבדה (מטבלה):** המוגלובין 14.2 g/dL, WBC 8.2 ...
-  - 📊 **פענוח א.ק.ג (ניתוח תמונה):** קצב סינוס, 72 פעימות/דקה ...
-  - 📊 **גרף מגמה (ניתוח תמונה):** עלייה הדרגתית ב-TSH ...
+היסטוריה רפואית - אבחנה של קרוהן מגיל 17 לאחר דימום רקטלי וכאבי בטן וירידה במשקל. קולונו ראשון מ2023 - מחלת PTACHY במעי הגס, רקטו סיגמא מעי יורד ורוחבי ושטחום איליאוצקלי. מעי דק סופי תקין.
+בביופסיות דלקת גרנולומטית. בגסטרו באותו מועד אריתמה בקיבה ללא חריגה בביופסיות. עקב פסוריאזיס עם התקרחות, אלופציה ודלקת. טופל בזריקות סטראודליות ממאי 25 עם שיפור ניכר. ללא אשפוזים ניתוחים או מתן סטרואידים. ללא מגבלה גופנית או תזונתית.
 
-This is MANDATORY. Do NOT omit these markers.
-If no table or chart data exists, do not add markers.
+אבחנות - קרוהן
 
-=====================================
-ADDITIONAL RULES
-=====================================
+תרופות קבועות - חומירה
 
-- If document is administrative only → state that clearly.
-- If document is non-medical → return: "No medical data identified."
-- If multiple visits appear → summarize chronologically.
-- If Hebrew appears → summarize in the requested output language.
-- Do NOT output internal reasoning.
+סיכום מפגש נוכחי - כעת בהפוגה יציבה עמוקה בכל הזירות.
 
-=====================================
-FIELD CONSTRAINTS (STRICT)
-=====================================
+מסקנות - ימשיך טיפול בחומירה. מעקב מעבדתי ובמרפאה כל חצי שנה.
 
-These rules override general summarization when the specific field exists:
-
-- "Auxiliary Tests" / "בדיקות עזר":
-  Must include ONLY lab results and diagnostic tests performed UP TO the current
-  encounter. Do NOT include tests ordered or planned during the current visit.
-  Example: "CBC (12/01/2025): WBC 8.2, Hgb 13.1; HbA1c (11/2025): 6.8%"
-
-- "Diagnoses" / "אבחנות":
-  Use ICD-10 terminology when identifiable. Differentiate between confirmed
-  diagnoses and suspected/differential diagnoses.
-
-- "Medications" / "תרופות":
-  Include drug name, dosage, route, and frequency. If any element is missing,
-  note it explicitly. List both active and recently discontinued medications.
-
-- "Functional Status" / "מצב תפקודי":
-  Express limitations in concrete terms (e.g., "cannot stand > 30 minutes")
-  rather than vague descriptions. Include military-relevant limitations.
-
-- "Physician Assessment" / "הערכת רופא":
-  Distinguish between the physician's own clinical opinion and findings
-  quoted from other specialists."""
+טיפולים והמלצות - ימשיך טיפול בחומירה. יבצע מעקב מעבדתי ובמרפאה כל חצי שנה. ממליצה לחזור על בדיקת CPK שכן תוצאות החריגות נגרמו כנראה מביצוע הבדיקה מיד לאחר פעילות גופנית."""
 
 
 @app.route(route="summarize", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
@@ -1535,24 +1443,6 @@ def summarize_document(req: func.HttpRequest) -> func.HttpResponse:
                     logger.info("Loaded page %d image for figure analysis | docId=%s", pn, doc_id)
                 except Exception:
                     logger.warning("Could not load page image %s for figure analysis", blob_path)
-
-        # ── Add data-source marker reminder at end of user prompt ──
-        _has_enriched = bool(ocr_tables) or bool(page_images_b64)
-        if _has_enriched:
-            user_prompt += "\n\n---\n\n"
-            user_prompt += "⚠ REMINDER: This document contains "
-            parts = []
-            if ocr_tables:
-                parts.append(f"{len(ocr_tables)} structured table(s)")
-            if page_images_b64:
-                parts.append(f"visual chart/figure image(s) on page(s) {', '.join(str(p) for p in sorted(page_images_b64))}")
-            user_prompt += " and ".join(parts) + ".\n"
-            user_prompt += (
-                "You MUST prefix every bullet or sub-heading that contains data "
-                "extracted from a table with 📋, and every bullet or sub-heading "
-                "that contains data extracted from a visual chart/graph/EKG image with 📊. "
-                "Bold the description after the marker. Do NOT skip this."
-            )
 
         # Load active prompt (external or built-in)
         system_prompt = _load_active_prompt(blob_helper)
@@ -1778,6 +1668,143 @@ def upload_cors(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Post-OCR Quality Assessment
+# ═══════════════════════════════════════════════════════════════════════
+
+_GARBAGE_CHARS = set("□■◻⬜▪▫●○◉◎★☆♦♠♣♥⬛⬜ꜗ")
+_HEBREW_RANGE = range(0x0590, 0x05FF + 1)
+_ARABIC_RANGE = range(0x0600, 0x06FF + 1)
+
+
+def _assess_ocr_quality(
+    content: str,
+    pages: list[dict],
+    tables: list[dict],
+    page_count: int,
+    page_errors: list[str],
+) -> dict:
+    """Assess OCR quality from the actual extracted text and metadata.
+
+    Returns a dict with overall score (0-1) and component scores.
+
+    Formula:
+      ocrQuality = 0.35×confidence + 0.20×textDensity + 0.15×coherence
+                   + 0.15×(1 - garbageRatio) + 0.10×(1 - repetition) + 0.05×structure
+    """
+    if not content or not content.strip():
+        return {
+            "score": 0.0,
+            "grade": "empty",
+            "confidence": 0.0,
+            "textDensity": 0.0,
+            "coherence": 0.0,
+            "garbageRatio": 1.0,
+            "repetition": 0.0,
+            "structure": 0.0,
+            "wordCount": 0,
+            "charCount": 0,
+        }
+
+    # ── 1. Word Confidence (35%) ─────────────────────────────────
+    # Extract per-word confidence from Doc Intelligence pages response
+    all_confidences: list[float] = []
+    for page in pages:
+        for word in page.get("words", []):
+            conf = word.get("confidence")
+            if conf is not None:
+                all_confidences.append(float(conf))
+
+    avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0.5
+
+    # ── 2. Text Density (20%) ────────────────────────────────────
+    # Expect ~150-300 words per page for a medical document
+    words = content.split()
+    word_count = len(words)
+    expected_words = page_count * 200
+    text_density = min(1.0, word_count / max(expected_words, 1))
+
+    # ── 3. Language Coherence (15%) ──────────────────────────────
+    # What % of words are "real" (≥2 chars, contain at least one letter)
+    real_words = 0
+    for w in words:
+        if len(w) >= 2 and any(
+            c.isalpha() or ord(c) in _HEBREW_RANGE or ord(c) in _ARABIC_RANGE
+            for c in w
+        ):
+            real_words += 1
+
+    coherence = real_words / max(word_count, 1)
+
+    # ── 4. Garbage Character Ratio (15%) ─────────────────────────
+    total_chars = len(content)
+    garbage_count = sum(1 for c in content if c in _GARBAGE_CHARS)
+    garbage_ratio = garbage_count / max(total_chars, 1)
+
+    # ── 5. Repetition Score (10%) ────────────────────────────────
+    # Check for repeated 4-word sequences (OCR artifact)
+    ngram_size = 4
+    if word_count > ngram_size * 2:
+        ngrams: dict[str, int] = {}
+        for i in range(word_count - ngram_size + 1):
+            gram = " ".join(words[i:i + ngram_size])
+            ngrams[gram] = ngrams.get(gram, 0) + 1
+        repeated = sum(v - 1 for v in ngrams.values() if v > 1)
+        total_ngrams = max(word_count - ngram_size + 1, 1)
+        repetition_ratio = min(1.0, repeated / total_ngrams)
+    else:
+        repetition_ratio = 0.0
+
+    # ── 6. Structure Score (5%) ──────────────────────────────────
+    # Did Doc Intelligence detect structure (tables, multiple pages)?
+    has_tables = len(tables) > 0
+    has_multiple_pages = len(pages) > 0
+    pages_succeeded = page_count - len(page_errors)
+    page_success_ratio = pages_succeeded / max(page_count, 1)
+
+    structure_score = (
+        0.3 * (1.0 if has_tables else 0.5)  # tables detected = good
+        + 0.3 * (1.0 if has_multiple_pages else 0.0)  # pages detected
+        + 0.4 * page_success_ratio  # all pages succeeded
+    )
+
+    # ── Composite Score ──────────────────────────────────────────
+    score = (
+        0.35 * avg_confidence
+        + 0.20 * text_density
+        + 0.15 * coherence
+        + 0.15 * (1.0 - garbage_ratio)
+        + 0.10 * (1.0 - repetition_ratio)
+        + 0.05 * structure_score
+    )
+    score = round(min(max(score, 0.0), 1.0), 3)
+
+    # Grade
+    if score >= 0.85:
+        grade = "excellent"
+    elif score >= 0.70:
+        grade = "good"
+    elif score >= 0.50:
+        grade = "fair"
+    elif score >= 0.30:
+        grade = "poor"
+    else:
+        grade = "very_poor"
+
+    return {
+        "score": score,
+        "grade": grade,
+        "confidence": round(avg_confidence, 3),
+        "textDensity": round(text_density, 3),
+        "coherence": round(coherence, 3),
+        "garbageRatio": round(garbage_ratio, 4),
+        "repetition": round(repetition_ratio, 4),
+        "structure": round(structure_score, 3),
+        "wordCount": word_count,
+        "charCount": total_chars,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Multi-page OCR endpoint
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1896,8 +1923,13 @@ def run_ocr(req: func.HttpRequest) -> func.HttpResponse:
                 for p in range(1, page_count + 1)
             }
             for fut in as_completed(futures):
-                pg_num, result_data, error = fut.result()
-                page_results_map[pg_num] = (result_data, error)
+                pg_num = futures[fut]
+                try:
+                    _, result_data, error = fut.result(timeout=120)
+                    page_results_map[pg_num] = (result_data, error)
+                except Exception as ocr_exc:
+                    logger.exception("OCR page %d TIMED OUT or CRASHED", pg_num)
+                    page_results_map[pg_num] = (None, f"Page {pg_num}: timed out or crashed - {ocr_exc}")
 
         # Merge results in page order so content/offsets are deterministic
         for page_num in range(1, page_count + 1):
@@ -1933,6 +1965,9 @@ def run_ocr(req: func.HttpRequest) -> func.HttpResponse:
         # Combine into a single OCR result
         combined_content = "\n\n".join(all_content_parts)
 
+        # ── Post-OCR Quality Assessment ──────────────────────────
+        ocr_quality = _assess_ocr_quality(combined_content, all_pages, all_tables, page_count, page_errors)
+
         combined_result = {
             "status": "succeeded",
             "analyzeResult": {
@@ -1944,6 +1979,7 @@ def run_ocr(req: func.HttpRequest) -> func.HttpResponse:
             "pagesProcessed": page_count,
             "pagesSucceeded": page_count - len(page_errors),
             "lowConfidence": low_confidence,
+            "ocrQuality": ocr_quality,
         }
 
         if page_errors:
@@ -2625,180 +2661,6 @@ def promote_to_example(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="promote-to-example", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def promote_cors(req: func.HttpRequest) -> func.HttpResponse:
-    return func.HttpResponse("", status_code=200, headers={
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, x-functions-key",
-    })
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Upload-based example creation (drag-and-drop files)
-# ═══════════════════════════════════════════════════════════════════════
-
-
-def _extract_text_from_file(file_bytes: bytes, filename: str) -> str:
-    """Extract plain text from an uploaded file (TXT, DOCX, or text-based PDF)."""
-    name_lower = filename.lower()
-
-    if name_lower.endswith(".txt") or name_lower.endswith(".md"):
-        return file_bytes.decode("utf-8", errors="replace")
-
-    if name_lower.endswith(".docx"):
-        import io
-        from docx import Document as DocxDocument
-
-        doc = DocxDocument(io.BytesIO(file_bytes))
-        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-        # Also extract text from tables
-        for table in doc.tables:
-            for row in table.rows:
-                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                if cells:
-                    paragraphs.append(" | ".join(cells))
-        return "\n".join(paragraphs)
-
-    if name_lower.endswith(".pdf"):
-        import io
-        from PyPDF2 import PdfReader
-
-        reader = PdfReader(io.BytesIO(file_bytes))
-        pages_text = []
-        for page in reader.pages:
-            text = page.extract_text()
-            if text and text.strip():
-                pages_text.append(text.strip())
-        if pages_text:
-            return "\n\n".join(pages_text)
-        return ""
-
-    raise ValueError(f"Unsupported file type: {filename}. Use .txt, .docx, or .pdf")
-
-
-@app.route(route="examples/upload", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
-def create_example_upload(req: func.HttpRequest) -> func.HttpResponse:
-    """Create a new few-shot example from uploaded files (drag-and-drop).
-
-    Accepts multipart/form-data with:
-      - inputFile: TXT, DOCX, or text-based PDF (the raw document)
-      - summaryFile: TXT or DOCX (the doctor's ideal summary)
-      - documentType (form field, optional)
-      - description (form field, optional)
-      - isGolden (form field, optional, "true"/"false")
-      - tags (form field, optional, comma-separated)
-    """
-    try:
-        input_file = req.files.get("inputFile")
-        summary_file = req.files.get("summaryFile")
-
-        if not input_file or not summary_file:
-            return func.HttpResponse(
-                json.dumps({"error": "Both inputFile and summaryFile are required"}),
-                status_code=400, mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-            )
-
-        # Extract text from uploaded files
-        try:
-            input_text = _extract_text_from_file(
-                input_file.read(), input_file.filename or "input.txt"
-            )
-        except ValueError as e:
-            return func.HttpResponse(
-                json.dumps({"error": f"Input file error: {e}"}),
-                status_code=400, mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-            )
-
-        try:
-            ideal_summary = _extract_text_from_file(
-                summary_file.read(), summary_file.filename or "summary.txt"
-            )
-        except ValueError as e:
-            return func.HttpResponse(
-                json.dumps({"error": f"Summary file error: {e}"}),
-                status_code=400, mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-            )
-
-        if not input_text.strip():
-            return func.HttpResponse(
-                json.dumps({"error": "Input file contains no extractable text. For scanned PDFs, process through the pipeline first."}),
-                status_code=400, mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-            )
-
-        if not ideal_summary.strip():
-            return func.HttpResponse(
-                json.dumps({"error": "Summary file contains no extractable text"}),
-                status_code=400, mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-            )
-
-        # Read metadata from form fields
-        document_type = req.form.get("documentType", "general")
-        description = req.form.get("description", "")
-        is_golden = req.form.get("isGolden", "false").lower() == "true"
-        tags_raw = req.form.get("tags", "")
-        tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
-
-        # Create example (same storage format as create_example)
-        example_id = f"ex-{uuid.uuid4().hex[:8]}"
-        blob_helper = _get_blob_helper()
-
-        blob_helper.upload_bytes(
-            input_text.encode("utf-8"), "artifacts",
-            f"examples/{example_id}/input.txt", content_type="text/plain",
-        )
-        blob_helper.upload_bytes(
-            ideal_summary.encode("utf-8"), "artifacts",
-            f"examples/{example_id}/summary.txt", content_type="text/plain",
-        )
-
-        _store_example_embedding(blob_helper, example_id, input_text)
-
-        import datetime
-        metadata = {
-            "exampleId": example_id,
-            "category": document_type,
-            "documentType": document_type,
-            "description": description,
-            "isGolden": is_golden,
-            "tags": tags,
-            "inputLength": len(input_text),
-            "summaryLength": len(ideal_summary),
-            "sourceInputFile": input_file.filename,
-            "sourceSummaryFile": summary_file.filename,
-            "createdAt": datetime.datetime.utcnow().isoformat() + "Z",
-        }
-        blob_helper.upload_bytes(
-            json.dumps(metadata, indent=2, ensure_ascii=False).encode("utf-8"),
-            "artifacts",
-            f"examples/{example_id}/metadata.json",
-            content_type="application/json",
-        )
-
-        logger.info(
-            "Created example %s from uploaded files (%s + %s)",
-            example_id, input_file.filename, summary_file.filename,
-        )
-
-        return func.HttpResponse(
-            json.dumps({"success": True, **metadata}),
-            status_code=201, mimetype="application/json",
-            headers={"Access-Control-Allow-Origin": "*"},
-        )
-    except Exception:
-        logger.exception("Error creating example from file upload")
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to create example from uploaded files"}),
-            status_code=500, mimetype="application/json",
-            headers={"Access-Control-Allow-Origin": "*"},
-        )
-
-
-@app.route(route="examples/upload", methods=["OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
-def examples_upload_cors(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse("", status_code=200, headers={
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
